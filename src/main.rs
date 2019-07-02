@@ -312,6 +312,35 @@ impl Prtl {
             *psa = (1.0 + (*px * *px + *py * *py + *pz * *pz) * *CSQINV).sqrt()
         }
     }
+
+    fn move_and_deposit(&mut self, jx: &mut Array2::<f32>, jy: &mut Array2::<f32>, jz: &mut Array2::<f32>) {
+        // FIRST we update positions of particles
+        let mut c1: f32;
+        for (x, y, px, py, psa) in izip!(&mut self.x, &mut self.y, & self.px, & self.py, & self.psa) {
+            c1 =  0.5 * *DT * psa.powf(-1.0);
+            *x += c1 * px;
+            *y += c1 * py;
+        }
+        //self.dsty *=0
+        self.apply_bc();
+
+
+        // Deposit currents
+        // depositCurrent(self.x, self.y, self.px, self.py, self.pz, self.psa, self.sim.jx, self.sim.jy, self.sim.jz, self.charge)
+
+        // UPDATE POS AGAIN!
+        for (x, y, px, py, psa) in izip!(&mut self.x, &mut self.y, & self.px, & self.py, & self.psa) {
+            c1 =  0.5 * *DT * psa.powf(-1.0);
+            *x += c1 * px;
+            *y += c1 * py;
+        }
+        //self.dsty *=0
+        self.apply_bc();
+
+        // # CALCULATE DENSITY
+        //calculateDens(self.x, self.y, self.dsty)#, self.charge)
+        //self.sim.dsty += self.charge*self.dsty
+    }
 }
 
 fn main() {
