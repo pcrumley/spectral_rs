@@ -26,6 +26,9 @@ struct Sim {
     b_x: Array2::<f32>,
     b_y: Array2::<f32>,
     b_z: Array2::<f32>,
+    j_x: Array2::<f32>,
+    j_y: Array2::<f32>,
+    j_z: Array2::<f32>,
     prtls: Vec<Prtl>
 }
 
@@ -60,6 +63,9 @@ fn new_sim() -> Sim {
             b_x: Array2::<f32>::zeros((*SIZE_Y, *SIZE_X)),
             b_y: Array2::<f32>::zeros((*SIZE_Y, *SIZE_X)),
             b_z: Array2::<f32>::ones((*SIZE_Y, *SIZE_X)),
+            j_x: Array2::<f32>::zeros((*SIZE_Y, *SIZE_X)),
+            j_y: Array2::<f32>::zeros((*SIZE_Y, *SIZE_X)),
+            j_z: Array2::<f32>::ones((*SIZE_Y, *SIZE_X)),
             prtls: Vec::<Prtl>::new()
         };
     sim
@@ -172,8 +178,6 @@ impl Prtl {
         let mut w10: f32; let mut w11: f32; let mut w12: f32;
         let mut w20: f32; let mut w21: f32; let mut w22: f32;
 
-
-
         let mut ext: f32; let mut eyt: f32; let mut ezt: f32;
         let mut bxt: f32; let mut byt: f32; let mut bzt: f32;
         let mut ux: f32;  let mut uy: f32;  let mut uz: f32;
@@ -223,25 +227,25 @@ impl Prtl {
 
             // INTERPOLATE ALL THE FIELDS
             ext = w00 * ex[[iy, ix]];
-            ext += w01 * ex[[iy, ix + 1]];
-            ext += w02 * ex[[iy, ix + 2]];
-            ext += w10 * ex[[iy + 1, ix]];
-            ext += w11 * ex[[iy + 1, ix + 1]];
-            ext += w12 * ex[[iy + 1, ix + 2]];
-            ext += w20 * ex[[iy + 2, ix]];
-            ext += w21 * ex[[iy + 2, ix + 1]];
-            ext += w22 * ex[[iy + 2, ix + 2]];
+            ext += w01 * ex[[iy, ix1]];
+            ext += w02 * ex[[iy, ix2]];
+            ext += w10 * ex[[iy1, ix]];
+            ext += w11 * ex[[iy1, ix1]];
+            ext += w12 * ex[[iy1, ix2]];
+            ext += w20 * ex[[iy2, ix]];
+            ext += w21 * ex[[iy2, ix1]];
+            ext += w22 * ex[[iy2, ix2]];
             ext *= self.beta;
 
             eyt = w00 * ey[[iy, ix]];
-            eyt += w01 * ey[[iy, ix + 1]];
-            eyt += w02 * ey[[iy, ix + 2]];
-            eyt += w10 * ey[[iy + 1, ix]];
-            eyt += w11 * ey[[iy + 1, ix + 1]];
-            eyt += w12 * ey[[iy + 1, ix + 2]];
-            eyt += w20 * ey[[iy + 2, ix]];
-            eyt += w21 * ey[[iy + 2, ix + 1]];
-            eyt += w22 * ey[[iy + 2, ix + 2]];
+            eyt += w01 * ey[[iy, ix1]];
+            eyt += w02 * ey[[iy, ix2]];
+            eyt += w10 * ey[[iy1, ix]];
+            eyt += w11 * ey[[iy1, ix1]];
+            eyt += w12 * ey[[iy1, ix2]];
+            eyt += w20 * ey[[iy2, ix]];
+            eyt += w21 * ey[[iy2, ix1]];
+            eyt += w22 * ey[[iy2, ix2]];
             eyt *= self.beta;
 
             ezt = w00 * ez[[iy, ix]];
@@ -255,37 +259,37 @@ impl Prtl {
             ezt += w22 * ez[[iy2, ix2]];
             ezt *= self.beta;
 
-            bxt = w00 * ex[[iy, ix]];
-            bxt += w01 * ex[[iy, ix1]];
-            bxt += w02 * ex[[iy, ix2]];
-            bxt += w10 * ex[[iy1, ix]];
-            bxt += w11 * ex[[iy1, ix1]];
-            bxt += w12 * ex[[iy1, ix2]];
-            bxt += w20 * ex[[iy2, ix]];
-            bxt += w21 * ex[[iy2, ix1]];
-            bxt += w22 * ex[[iy2, ix2]];
+            bxt = w00 * bx[[iy, ix]];
+            bxt += w01 * bx[[iy, ix1]];
+            bxt += w02 * bx[[iy, ix2]];
+            bxt += w10 * bx[[iy1, ix]];
+            bxt += w11 * bx[[iy1, ix1]];
+            bxt += w12 * bx[[iy1, ix2]];
+            bxt += w20 * bx[[iy2, ix]];
+            bxt += w21 * bx[[iy2, ix1]];
+            bxt += w22 * bx[[iy2, ix2]];
             bxt *= self.alpha;
 
             byt = w00 * by[[iy, ix]];
-            byt += w01 * by[[iy, ix + 1]];
-            byt += w02 * by[[iy, ix + 2]];
-            byt += w10 * by[[iy + 1, ix]];
-            byt += w11 * by[[iy + 1, ix + 1]];
-            byt += w12 * by[[iy + 1, ix + 2]];
-            byt += w20 * by[[iy + 2, ix]];
-            byt += w21 * by[[iy + 2, ix + 1]];
-            byt += w22 * by[[iy + 2, ix + 2]];
+            byt += w01 * by[[iy, ix1]];
+            byt += w02 * by[[iy, ix2]];
+            byt += w10 * by[[iy1, ix]];
+            byt += w11 * by[[iy1, ix1]];
+            byt += w12 * by[[iy1, ix2]];
+            byt += w20 * by[[iy2, ix]];
+            byt += w21 * by[[iy2, ix1]];
+            byt += w22 * by[[iy2, ix2]];
             byt *= self.alpha;
 
             bzt = w00 * bz[[iy, ix]];
-            bzt += w01 * bz[[iy, ix + 1]];
-            bzt += w02 * bz[[iy, ix + 2]];
-            bzt += w10 * bz[[iy + 1, ix]];
-            bzt += w11 * bz[[iy + 1, ix + 1]];
-            bzt += w12 * bz[[iy + 1, ix + 2]];
-            bzt += w20 * bz[[iy + 2, ix]];
-            bzt += w21 * bz[[iy + 2, ix + 1]];
-            bzt += w22 * bz[[iy + 2, ix + 2]];
+            bzt += w01 * bz[[iy, ix1]];
+            bzt += w02 * bz[[iy, ix2]];
+            bzt += w10 * bz[[iy1, ix]];
+            bzt += w11 * bz[[iy1, ix1]];
+            bzt += w12 * bz[[iy1, ix2]];
+            bzt += w20 * bz[[iy2, ix]];
+            bzt += w21 * bz[[iy2, ix1]];
+            bzt += w22 * bz[[iy2, ix2]];
             bzt *= self.alpha;
 
             //  Now, the Boris push:
@@ -312,7 +316,98 @@ impl Prtl {
             *psa = (1.0 + (*px * *px + *py * *py + *pz * *pz) * *CSQINV).sqrt()
         }
     }
+    fn deposit_currents (&self, jx: &mut Array2::<f32>, jy: &mut Array2::<f32>, jz: &mut Array2::<f32>) {
+        // local vars we will use
+        let mut ix: usize; let mut dx: f32; let mut iy: usize; let mut dy: f32;
+        let mut iy1: usize; let mut iy2: usize; let mut ix1: usize; let mut ix2: usize;
 
+        // for the weights
+        let mut w00: f32; let mut w01: f32; let mut w02: f32;
+        let mut w10: f32; let mut w11: f32; let mut w12: f32;
+        let mut w20: f32; let mut w21: f32; let mut w22: f32;
+
+        let mut vx: f32; let mut vy: f32; let mut vz: f32;
+        let mut psa_inv: f32;
+
+        for (x, y, px, py, pz, psa) in izip!(&self.x, &self.y, &self.px, &self.py, &self.pz, &self.psa) {
+            dx = x - x.round();
+            ix = x.round() as usize;
+            dy = y - y.round();
+            iy = y.round() as usize;
+            iy1 = iy + 1;
+            iy2 = iy + 2;
+            ix1 = ix + 1;
+            ix2 = ix + 2;
+            if iy1 >= *SIZE_Y {
+                iy1 -= *SIZE_Y;
+                iy2 -= *SIZE_Y;
+            } else if iy2 >= *SIZE_Y {
+                iy2 -= *SIZE_Y;
+            }
+            if ix1 >= *SIZE_X {
+                ix1 -= *SIZE_X;
+                ix2 -= *SIZE_X;
+            } else if ix2 >= *SIZE_X {
+                ix2 -= *SIZE_X;
+            }
+            psa_inv = psa.powf(-1.0);
+            vx = self.charge * px * psa_inv;
+            vy = self.charge * py * psa_inv;
+            vz = self.charge * pz * psa_inv;
+            // CALC WEIGHTS
+            // 2nd order
+            // The weighting scheme prtl is in middle
+            // # ----------------------
+            // # | w0,0 | w0,1 | w0,2 |
+            // # ----------------------
+            // # | w1,0 | w1,1 | w1,2 |
+            // # ----------------------
+            // # | w2,0 | w2,1 | w2,2 |
+            // # ----------------------
+            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
+            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
+            w12 = (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w20 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w21 = 0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
+            w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+
+            // Deposit the CURRENT
+            jx[[iy, ix]] += w00 * vx;
+            jx[[iy1, ix]] += w10 * vx;
+            jx[[iy2, ix]] += w20 * vx;
+            jx[[iy, ix1]] += w01 * vx;
+            jx[[iy1, ix1]] += w11 * vx;
+            jx[[iy2, ix1]] += w21 * vx;
+            jx[[iy, ix2]] += w02 * vx;
+            jx[[iy1, ix2]] += w12 * vx;
+            jx[[iy2, ix2]] += w22 * vx;
+
+            jy[[iy, ix]] += w00 * vy;
+            jy[[iy1, ix]] += w10 * vy;
+            jy[[iy2, ix]] += w20 * vy;
+            jy[[iy, ix1]] += w01 * vy;
+            jy[[iy1, ix1]] += w11 * vy;
+            jy[[iy2, ix1]] += w21 * vy;
+            jy[[iy, ix2]] += w02 * vy;
+            jy[[iy1, ix2]] += w12 * vy;
+            jy[[iy2, ix2]] += w22 * vy;
+
+            jz[[iy, ix]] += w00 * vz;
+            jz[[iy1, ix]] += w10 * vz;
+            jz[[iy2, ix]] += w20 * vz;
+            jz[[iy, ix1]] += w01 * vz;
+            jz[[iy1, ix1]] += w11 * vz;
+            jz[[iy2, ix1]] += w21 * vz;
+            jz[[iy, ix2]] += w02 * vz;
+            jz[[iy1, ix2]] += w12 * vz;
+            jz[[iy2, ix2]] += w22 * vz;
+
+
+        }
+    }
     fn move_and_deposit(&mut self, jx: &mut Array2::<f32>, jy: &mut Array2::<f32>, jz: &mut Array2::<f32>) {
         // FIRST we update positions of particles
         let mut c1: f32;
