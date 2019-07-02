@@ -12,6 +12,7 @@ lazy_static! {
     static ref DELTA: usize = 15;
     static ref DT: f32 = 0.1;
     static ref C:  f32 = 3.0; // Don't touch this.
+    static ref CSQINV: f32 = 1.0/ (*C * *C);
     static ref DENS: usize = 2; // # of prlts per species per cell
     static ref GAMMA_INJ: f32 = 15.0; // Speed of upstream flow
     static ref BETA_INJ: f32 = f32::sqrt(1.-f32::powf(*GAMMA_INJ,-2.));
@@ -145,7 +146,7 @@ impl Prtl {
             *py *= self.vth * *C;
             *pz = rng.sample(StandardNormal);
             *pz *= self.vth * *C;
-            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz)/(*C * *C);
+            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) * *CSQINV;
             *psa = psa.sqrt();
 
             // Flip the px according to zenitani 2015
@@ -160,13 +161,164 @@ impl Prtl {
             *psa = psa.sqrt();
         }
     }
+    fn boris_push(&mut self, ex: &Array2::<f32>, ey: &Array2::<f32>, ez: &Array2::<f32>,
+        bx: &Array2::<f32>, by: &Array2::<f32>, bz: &Array2::<f32>) {
+        // local vars we will use
+        let mut ix: usize; let mut dx: f32; let mut iy: usize; let mut dy: f32;
+        let mut iy1: usize; let mut iy2: usize; let mut ix1: usize; let mut ix2: usize;
+
+        // for the weights
+        let mut w00: f32; let mut w01: f32; let mut w02: f32;
+        let mut w10: f32; let mut w11: f32; let mut w12: f32;
+        let mut w20: f32; let mut w21: f32; let mut w22: f32;
+
+
+
+        let mut ext: f32; let mut eyt: f32; let mut ezt: f32;
+        let mut bxt: f32; let mut byt: f32; let mut bzt: f32;
+        let mut ux: f32;  let mut uy: f32;  let mut uz: f32;
+        let mut uxt: f32;  let mut uyt: f32;  let mut uzt: f32;
+        let mut pt: f32; let mut gt: f32; let mut boris: f32;
+
+        for (x, y, px, py, pz, psa) in izip!(&mut self.x, &mut self.y, &mut self.px, &mut self.py, &mut self.pz, &mut self.psa) {
+            dx = *x - x.round();
+            ix = x.round() as usize;
+            dy = *y - y.round();
+            iy = y.round() as usize;
+            iy1 = iy + 1;
+            iy2 = iy + 2;
+            ix1 = ix + 1;
+            ix2 = ix + 2;
+            if iy1 >= *SIZE_Y {
+                iy1 -= *SIZE_Y;
+                iy2 -= *SIZE_Y;
+            } else if iy2 >= *SIZE_Y {
+                iy2 -= *SIZE_Y;
+            }
+            if ix1 >= *SIZE_X {
+                ix1 -= *SIZE_X;
+                ix2 -= *SIZE_X;
+            } else if ix2 >= *SIZE_X {
+                ix2 -= *SIZE_X;
+            }
+            // CALC WEIGHTS
+            // 2nd order
+            // The weighting scheme prtl is in middle
+            // # ----------------------
+            // # | w0,0 | w0,1 | w0,2 |
+            // # ----------------------
+            // # | w1,0 | w1,1 | w1,2 |
+            // # ----------------------
+            // # | w2,0 | w2,1 | w2,2 |
+            // # ----------------------
+            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
+            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
+            w12 = (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w20 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w21 = 0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
+            w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+
+            // INTERPOLATE ALL THE FIELDS
+            ext = w00 * ex[[iy, ix]];
+            ext += w01 * ex[[iy, ix + 1]];
+            ext += w02 * ex[[iy, ix + 2]];
+            ext += w10 * ex[[iy + 1, ix]];
+            ext += w11 * ex[[iy + 1, ix + 1]];
+            ext += w12 * ex[[iy + 1, ix + 2]];
+            ext += w20 * ex[[iy + 2, ix]];
+            ext += w21 * ex[[iy + 2, ix + 1]];
+            ext += w22 * ex[[iy + 2, ix + 2]];
+            ext *= self.beta;
+
+            eyt = w00 * ey[[iy, ix]];
+            eyt += w01 * ey[[iy, ix + 1]];
+            eyt += w02 * ey[[iy, ix + 2]];
+            eyt += w10 * ey[[iy + 1, ix]];
+            eyt += w11 * ey[[iy + 1, ix + 1]];
+            eyt += w12 * ey[[iy + 1, ix + 2]];
+            eyt += w20 * ey[[iy + 2, ix]];
+            eyt += w21 * ey[[iy + 2, ix + 1]];
+            eyt += w22 * ey[[iy + 2, ix + 2]];
+            eyt *= self.beta;
+
+            ezt = w00 * ez[[iy, ix]];
+            ezt += w01 * ez[[iy, ix1]];
+            ezt += w02 * ez[[iy, ix2]];
+            ezt += w10 * ez[[iy1, ix]];
+            ezt += w11 * ez[[iy1, ix1]];
+            ezt += w12 * ez[[iy1, ix2]];
+            ezt += w20 * ez[[iy2, ix]];
+            ezt += w21 * ez[[iy2, ix1]];
+            ezt += w22 * ez[[iy2, ix2]];
+            ezt *= self.beta;
+
+            bxt = w00 * ex[[iy, ix]];
+            bxt += w01 * ex[[iy, ix1]];
+            bxt += w02 * ex[[iy, ix2]];
+            bxt += w10 * ex[[iy1, ix]];
+            bxt += w11 * ex[[iy1, ix1]];
+            bxt += w12 * ex[[iy1, ix2]];
+            bxt += w20 * ex[[iy2, ix]];
+            bxt += w21 * ex[[iy2, ix1]];
+            bxt += w22 * ex[[iy2, ix2]];
+            bxt *= self.alpha;
+
+            byt = w00 * by[[iy, ix]];
+            byt += w01 * by[[iy, ix + 1]];
+            byt += w02 * by[[iy, ix + 2]];
+            byt += w10 * by[[iy + 1, ix]];
+            byt += w11 * by[[iy + 1, ix + 1]];
+            byt += w12 * by[[iy + 1, ix + 2]];
+            byt += w20 * by[[iy + 2, ix]];
+            byt += w21 * by[[iy + 2, ix + 1]];
+            byt += w22 * by[[iy + 2, ix + 2]];
+            byt *= self.alpha;
+
+            bzt = w00 * bz[[iy, ix]];
+            bzt += w01 * bz[[iy, ix + 1]];
+            bzt += w02 * bz[[iy, ix + 2]];
+            bzt += w10 * bz[[iy + 1, ix]];
+            bzt += w11 * bz[[iy + 1, ix + 1]];
+            bzt += w12 * bz[[iy + 1, ix + 2]];
+            bzt += w20 * bz[[iy + 2, ix]];
+            bzt += w21 * bz[[iy + 2, ix + 1]];
+            bzt += w22 * bz[[iy + 2, ix + 2]];
+            bzt *= self.alpha;
+
+            //  Now, the Boris push:
+            ux = *px + ext;
+            uy = *py + eyt;
+            uz = *pz + ezt;
+            pt = ux * ux + uy * uy + uz * uz;
+            gt = (1. + pt * *CSQINV ).sqrt().powf(-1.0);
+
+            bxt *= gt;
+            byt *= gt;
+            bzt *= gt;
+
+            boris = 2.0 * (1.0 + bxt * bxt + byt * byt + bzt * bzt).powf(-1.0);
+
+            uxt = ux + uy*bzt - uz*byt;
+            uyt = uy + uz*bxt - ux*bzt;
+            uzt = uz + ux*byt - uy*bxt;
+
+            *px = ux + boris * (uyt * bzt - uzt * byt) + ext;
+            *py = uy + boris * (uzt * bxt - uxt * bzt) + eyt;
+            *pz = uz + boris * (uxt * byt - uyt * bxt) + ezt;
+
+            *psa = (1.0 + (*px * *px + *py * *py + *pz * *pz) * *CSQINV).sqrt()
+        }
+    }
 }
 
 fn main() {
     let mut sim = new_sim();
     sim.add_species(1.0, 1.0, 1E-3);
     sim.add_species(-1.0, 1.0, 1E-3);
-
+    //println!("{} {} {}", ions.px[0], ions.py[0], ions.pz[0]);
     //println!("{} {} {}", ions.px[0], ions.py[0], ions.pz[0]);
     //println!("{}", *BETA_INJ);
 }
