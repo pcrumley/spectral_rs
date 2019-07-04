@@ -14,7 +14,7 @@ lazy_static! {
     static ref CSQINV: f32 = 1.0/ (*C * *C);
     static ref DENS: usize = 2; // # of prtls per species per cell
     static ref GAMMA_INJ: f32 = 15.0; // Speed of upstream flow
-    static ref BETA_INJ: f32 = f32::sqrt(1.-f32::powf(*GAMMA_INJ,-2.));
+    static ref BETA_INJ: f32 = f32::sqrt(1.-f32::powi(*GAMMA_INJ, -2));
     static ref PRTL_NUM: usize = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
     static ref N_PASS: usize = 4; //Number of filter passes.
 }
@@ -48,6 +48,7 @@ pub fn run(_config: &Config) -> Result<(), Box<dyn Error>> {
     let mut sim = new_sim();
       sim.add_species(1.0, 1.0, 1E-3);
       sim.add_species(-1.0, 1.0, 1E-3);
+      println!["hi"];
       sim.run();
 
     Ok(())
@@ -59,57 +60,58 @@ use rand::prelude::*;
 use rand_distr::StandardNormal;
 use rand_distr::Standard;
 
-fn binomial_filter(fld_in: Vec::<f32>, fld_out: &mut Vec::<f32>) {
-    // fld_out should be the same size as fld_in
-    let mut iym1: usize;
-    let mut iy: usize;
-    let mut iyp1: usize;
-
+fn binomial_filter_2_d(in_vec: &mut Vec::<f32>, wrkspace: &mut Vec::<f32>) {
+    // wrkspace should be same size as fld
+    let weights: [f32; 3] = [0.25, 0.5, 0.25];
+    // account for ghost zones
+    // FIRST FILTER IN X-DIRECTION
     for _ in 0 .. *N_PASS {
-        // FIRST APPLY THE FILTERS OVER THE ROWS
-        for i in 1 .. *SIZE_Y + 1 {
+        for i in (1 .. (*SIZE_Y + 1)*(*SIZE_X + 3)).step_by(*SIZE_X + 3) {
             for j in 1 .. *SIZE_X + 1 {
-                iym1 = (i - 1) * (*SIZE_X + 3);
-                iy = i * (*SIZE_X + 3);
-                iyp1 = (i + 1) * (*SIZE_X + 3);
+                wrkspace[i] = weights.iter()
+                                .zip(&in_vec[i + j - 1 .. i + j + 1])
+                                .map(|(&w, &f)| w * f)
+                                .sum::<f32>();
+            }
+        // handle the ghost zones in x direction
+        wrkspace[i - 1] = wrkspace[i + *SIZE_X];
+        wrkspace[i + *SIZE_X + 1 ] = wrkspace[i];
+        wrkspace[i + *SIZE_X + 1 ] = wrkspace[i + 1];
+    }
+    // handle the ghost zones in y direction
+    // I COULD DO THIS WITH MEMCPY AND I KNOW IT IS POSSIBLE WITH SAFE
+    // RUST BUT I DON'T KNOW HOW :(
 
-                if cfg!(feature = "unsafe") {
-                    unsafe {
-                        *fld_out.get_unchecked_mut(iy + j) = (1./16.) * fld_in.get_unchecked(iy + j - 1);
-                        *fld_out.get_unchecked_mut(iy + j) += (2./16.) * fld_in.get_unchecked(iy + j);
-                        *fld_out.get_unchecked_mut(iy + j) += (1./16.) * fld_in.get_unchecked(iy + j + 1);
-                        *fld_out.get_unchecked_mut(iy + j) += (1./16.) * fld_in.get_unchecked(iym1 + j);
-                        *fld_out.get_unchecked_mut(iy + j) += (2./16.) * fld_in.get_unchecked(iy + j);
-                        *fld_out.get_unchecked_mut(iy + j) += (1./16.) * fld_in.get_unchecked(iyp1 + j);
-                    }
-                } else {
-                    fld_out[iy + j] = (1./16.) * fld_in[iy + j - 1];
-                    fld_out[iy + j] += (2./16.) * fld_in[iy + j];
-                    fld_out[iy + j] += (1./16.) * fld_in[iy + j + 1];
-                    fld_out[iy + j] += (1./16.) * fld_in[iym1 + j];
-                    fld_out[iy + j] += (2./16.) * fld_in[iy + j];
-                    fld_out[iy + j] += (1./16.) * fld_in[iym1 + j];
-                }
-            }
+        for j in 0 .. *SIZE_X + 3 {
+            wrkspace[j] = wrkspace[*SIZE_Y * *SIZE_X  + j];
+            wrkspace[(*SIZE_Y + 1) * *SIZE_X  + j] =wrkspace[*SIZE_X  + j];
+            wrkspace[(*SIZE_Y + 1) * *SIZE_X  + j] =wrkspace[*SIZE_X  + j];
         }
-        // Update ghost cells
-        // FIRST DO Y
-        for i in 1 .. *SIZE_Y +1 {
-            iy = i * (*SIZE_X + 3);
-            if cfg!(feature = "unsafe") {
-                unsafe {
-                    *fld_out.get_unchecked_mut(iy) = *fld_out.get_unchecked(iy + *SIZE_X);
-                    *fld_out.get_unchecked_mut(iy + *SIZE_X + 1) = *fld_out.get_unchecked(iy + 1);
-                    *fld_out.get_unchecked_mut(iy + *SIZE_X + 2) = *fld_out.get_unchecked(iy + 2);
-                }
-            } else {
-                fld_out[iy] = fld_out[iy + *SIZE_X];
-                fld_out[iy + *SIZE_X + 1] = fld_out[iy + 1];
-                fld_out[iy + *SIZE_X + 2] = fld_out[iy + 2];
+        // NOW FILTER IN Y-DIRECTION AND PUT VALS IN in_vec
+        for i in (1 .. (*SIZE_Y + 1)*(*SIZE_X + 3)).step_by(*SIZE_X + 3) {
+            for j in 1 .. *SIZE_X + 1 {
+                in_vec[i] = weights.iter()
+                                .zip(wrkspace[i + j - (*SIZE_X + 3) .. i + j + (*SIZE_X + 3)].iter().step_by(*SIZE_X + 3))
+                                .map(|(&w, &f)| w * f)
+                                .sum::<f32>();
             }
+            // handle the ghost zones in x direction
+            in_vec[i - 1] = in_vec[i + *SIZE_X];
+            in_vec[i + *SIZE_X + 1 ] = in_vec[i];
+            in_vec[i + *SIZE_X + 1 ] = in_vec[i + 1];
+        }
+        // handle the ghost zones in y direction
+        // I COULD DO THIS WITH MEMCPY AND I KNOW IT IS POSSIBLE WITH SAFE
+        // RUST BUT I DON'T KNOW HOW :(
+
+        for j in 0 .. *SIZE_X + 3 {
+            in_vec[j] = in_vec[*SIZE_Y * *SIZE_X  + j];
+            in_vec[(*SIZE_Y + 1) * *SIZE_X  + j] = in_vec[*SIZE_X  + j];
+            in_vec[(*SIZE_Y + 1) * *SIZE_X  + j] = in_vec[*SIZE_X  + j];
         }
     }
 }
+
 struct Sim {
     e_x: Vec::<f32>,
     e_y: Vec::<f32>,
@@ -125,6 +127,22 @@ struct Sim {
 }
 
 impl Sim {
+    fn new(cfg: Config) ->  Sim {
+        Sim {
+            e_x: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)], // 3 Ghost zones. 1 at 0, 2 at SIZE_X
+            e_y: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
+            e_z: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
+            b_x: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
+            b_y: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
+            b_z: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
+            j_x: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
+            j_y: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
+            j_z: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
+            prtls: Vec::<Prtl>::new(),
+            t: 0,
+        }
+    }
+
     fn add_species (&mut self, charge: f32, mass: f32, vth: f32) {
         let beta = charge * 0.5 * mass * *DT;
         let alpha = charge * 0.5 * mass * *DT / *C;
@@ -193,7 +211,7 @@ fn new_sim() -> Sim {
 
 
 
-struct Prtl {
+pub struct Prtl {
     x: Vec<f32>,
     y: Vec<f32>,
     px: Vec<f32>,
@@ -481,13 +499,13 @@ impl Prtl {
             uy = *py + eyt;
             uz = *pz + ezt;
             pt = ux * ux + uy * uy + uz * uz;
-            gt = (1. + pt * *CSQINV ).sqrt().powf(-1.0);
+            gt = 1.0 / (1. + pt * *CSQINV ).sqrt();
 
             bxt *= gt;
             byt *= gt;
             bzt *= gt;
 
-            boris = 2.0 * (1.0 + bxt * bxt + byt * byt + bzt * bzt).powf(-1.0);
+            boris = 2.0 / (1.0 + bxt * bxt + byt * byt + bzt * bzt);
 
             uxt = ux + uy*bzt - uz*byt;
             uyt = uy + uz*bxt - ux*bzt;
@@ -529,7 +547,7 @@ impl Prtl {
             //    ix2 -= *SIZE_X;
             //}
             iy *= 3 + *SIZE_X; iy1 *= 3 + *SIZE_X; iy2 *= 3 + *SIZE_X;
-            psa_inv = psa.powf(-1.0);
+            psa_inv = psa.powi(-1);
             vx = self.charge * px * psa_inv;
             vy = self.charge * py * psa_inv;
             vz = self.charge * pz * psa_inv;
@@ -623,7 +641,7 @@ impl Prtl {
         // FIRST we update positions of particles
         let mut c1: f32;
         for (x, y, px, py, psa) in izip!(&mut self.x, &mut self.y, & self.px, & self.py, & self.psa) {
-            c1 =  0.5 * *DT * psa.powf(-1.0);
+            c1 =  0.5 * *DT / psa;
             *x += c1 * px;
             *y += c1 * py;
         }
@@ -636,7 +654,7 @@ impl Prtl {
 
         // UPDATE POS AGAIN!
         for (x, y, px, py, psa) in izip!(&mut self.x, &mut self.y, & self.px, & self.py, & self.psa) {
-            c1 =  0.5 * *DT * psa.powf(-1.0);
+            c1 =  0.5 * *DT / psa;
             *x += c1 * px;
             *y += c1 * py;
         }
