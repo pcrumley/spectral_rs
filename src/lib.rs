@@ -43,9 +43,9 @@ impl Config {
         Ok( config )
     }
 }
-pub fn run(_config: &Config) -> Result<(), Box<dyn Error>> {
+pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     //let contents = fs::read_to_string(Sconfig.params.n_pass)?;
-    let mut sim = new_sim();
+    let mut sim = Sim::new(config);
       sim.add_species(1.0, 1.0, 1E-3);
       sim.add_species(-1.0, 1.0, 1E-3);
       println!["hi"];
@@ -127,7 +127,7 @@ struct Sim {
 }
 
 impl Sim {
-    fn new(cfg: Config) ->  Sim {
+    fn new(_cfg: Config) ->  Sim {
         Sim {
             e_x: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)], // 3 Ghost zones. 1 at 0, 2 at SIZE_X
             e_y: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
@@ -192,24 +192,6 @@ impl Sim {
         }
     }
 }
-fn new_sim() -> Sim {
-    let sim = Sim {
-            e_x: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)], // 3 Ghost zones. 1 at 0, 2 at SIZE_X
-            e_y: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
-            e_z: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
-            b_x: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
-            b_y: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
-            b_z: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
-            j_x: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
-            j_y: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
-            j_z: vec![0f32; (*SIZE_Y + 3) * (3 + *SIZE_X)],
-            prtls: Vec::<Prtl>::new(),
-            t: 0,
-        };
-    sim
-}
-
-
 
 pub struct Prtl {
     x: Vec<f32>,
@@ -270,16 +252,9 @@ impl Prtl {
 
                 }
                 c1 += *DENS;
-                // helper_arr = -.5+0.25+np.arange(dens)*.5
             }
 
         }
-        //    for j in range(delta, Lx-delta):
-        //#for i in range(Ly//2, Ly//2+10):
-        //    for j in range(delta, delta+10):
-        //        xArr[c1:c1+dens] = helper_arr + j
-        //        yArr[c1:c1+dens] = helper_arr + i
-        //        c1+=dens
     }
     fn initialize_velocities(&mut self) {
         //placeholder
