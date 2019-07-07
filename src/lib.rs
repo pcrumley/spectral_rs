@@ -48,7 +48,7 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     // Add lecs to prtls list
     prtls.push(Prtl::new(&sim, 1.0, 1.0, 1E-3));
     let mut flds = Flds::new(&sim);
-    for t in 1 .. sim.t_final + 1 {
+    for _t in 0 .. sim.t_final + 1 {
         // Zero out currents
         for (jx, jy, jz) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z) {
             *jx = 0.; *jy = 0.; *jz = 0.;
@@ -332,6 +332,32 @@ struct Prtl {
     alpha: f32,
     beta: f32,
     vth: f32,
+    tag: Vec<u64>,
+    track: Vec<bool>
+}
+fn fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: f32, dy: f32, fld: &Vec<f32>) -> f32 {
+    let ijm1 = (iy - 1) * (sim.size_x + 2);
+    let ij = iy * (sim.size_x + 2);
+    let ijp1 = (iy + 1) * (sim.size_x + 2);
+
+    let weights = [
+        0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx),
+        0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx),
+        0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx),
+        (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx),
+        (0.75 - dy * dy) * (0.75 - dx * dx),
+        (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx),
+        0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx),
+        0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx),
+        0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx)
+    ];
+    weights.iter()
+        .zip(fld[ijm1 - 1 .. ijm1 + 1].into_iter()
+            .chain(fld[ij - 1 .. ij + 1].into_iter())
+            .chain(fld[ijp1 - 1 .. ijp1 + 1].into_iter()))
+        .map(|(&w, &f)| w * f)
+        .sum::<f32>()
+
 }
 
 impl Prtl {
@@ -347,6 +373,8 @@ impl Prtl {
             py: vec![0f32; sim.prtl_num],
             pz: vec![0f32; sim.prtl_num],
             psa: vec![0f32; sim.prtl_num],
+            track: vec![false; sim.prtl_num],
+            tag: vec![0u64; sim.prtl_num],
             charge: charge,
             vth: vth,
             alpha: alpha,
@@ -401,7 +429,7 @@ impl Prtl {
                     r1 = (2.*(k as f32) +1.) * r1;
                     self.dx[c1+k] = r1 - 0.5;
                     self.dy[c1+k] = r1 - 0.5;
-
+                    self.tag[c1+k] = (c1 + k) as u64;
 
                 }
                 c1 += sim.dens as usize;
