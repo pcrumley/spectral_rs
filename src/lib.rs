@@ -11,12 +11,20 @@ use rand_distr::Standard;
 #[derive(Deserialize)]
 pub struct Config {
     pub params: Params,
-    pub setup: Setup
+    pub setup: Setup,
+    pub output: Output
 }
 
 #[derive(Deserialize)]
 pub struct Setup {
     pub t_final: u32,
+}
+#[derive(Deserialize)]
+pub struct Output {
+    pub track_prtls: bool,
+    pub write_output: bool,
+    pub track_interval: u32,
+    pub output_interval: u32
 }
 
 #[derive(Deserialize)]
@@ -38,17 +46,17 @@ impl Config {
         Ok( config )
     }
 }
-pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
+pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
     //let contents = fs::read_to_string(Sconfig.params.n_pass)?;
 
-    let sim = Sim::new(config);
+    let sim = Sim::new(&cfg);
     let mut prtls = Vec::<Prtl>::new();
     // Add ions to prtls list
     prtls.push(Prtl::new(&sim, 1.0, 1.0, 1E-3));
     // Add lecs to prtls list
     prtls.push(Prtl::new(&sim, 1.0, 1.0, 1E-3));
     let mut flds = Flds::new(&sim);
-    for _t in 0 .. sim.t_final + 1 {
+    for t in 0 .. sim.t_final + 1 {
         // Zero out currents
         for (jx, jy, jz) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z) {
             *jx = 0.; *jy = 0.; *jz = 0.;
@@ -69,6 +77,16 @@ pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
         }
 
         // let sim.t = t;
+        if cfg.output.write_output {
+            if t % cfg.output.output_interval == 0 {
+                // WRITE OUTPUT FILES
+            }
+        }
+        if cfg.output.track_prtls {
+            if t % cfg.output.track_interval == 0 {
+                // WRITE TRACKING FILES
+            }
+        }
     }
 
 
@@ -165,7 +183,7 @@ struct Sim {
 }
 
 impl Sim {
-    fn new(cfg: Config) ->  Sim {
+    fn new(cfg: &Config) ->  Sim {
         Sim {
             t: 0,
             t_final: cfg.setup.t_final,

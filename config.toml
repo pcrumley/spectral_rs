@@ -10,3 +10,10 @@ c = 3.0 # Don't touch this.
 dens = 2 # of prtls per species per cell
 gamma_inj = 15.0 # Speed of upstream flow
 n_pass = 4 # Number of filter passes.
+
+[output]
+track_ions = false
+track_lecs = false
+track_interval = 10 # In timesteps
+write_output = false # save output tsteps
+output_interval = 100 # In timesteps
