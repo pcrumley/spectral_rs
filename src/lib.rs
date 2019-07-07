@@ -6,34 +6,27 @@ use rand_distr::StandardNormal;
 use rand_distr::Standard;
 
 #[macro_use] extern crate itertools;
-#[macro_use] extern crate lazy_static;
 //#[macro_use(array)] extern crate ndarray;
-lazy_static! {
-    static ref SIZE_X: usize = 100;
-    static ref SIZE_Y: usize = 100;
-    static ref DELTA: usize = 15;
-    static ref DT: f32 = 0.1;
-    static ref C:  f32 = 3.0; // Don't touch this.
-    static ref CSQINV: f32 = 1.0/ (*C * *C);
-    static ref DENS: usize = 2; // # of prlts per species per cell
-    static ref GAMMA_INJ: f32 = 15.0; // Speed of upstream flow
-    static ref BETA_INJ: f32 = f32::sqrt(1.-f32::powi(*GAMMA_INJ,-2));
-    static ref PRTL_NUM: usize = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
-    static ref N_PASS: u32 = 4; //Number of filter passes.
-}
+
 #[derive(Deserialize)]
 pub struct Config {
-    pub params: Params
+    pub params: Params,
+    pub setup: Setup
+}
+
+#[derive(Deserialize)]
+pub struct Setup {
+    pub t_final: u32,
 }
 
 #[derive(Deserialize)]
 pub struct Params {
-    pub size_x: u32,
-    pub size_y: u32,
-    pub delta: u32,
+    pub size_x: usize,
+    pub size_y: usize,
+    pub delta: usize,
     pub dt: f32,
     pub c: f32,
-    pub dens: f32,
+    pub dens: u32,
     pub gamma_inj: f32,
     pub n_pass: u32,
 }
@@ -47,144 +40,284 @@ impl Config {
 }
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     //let contents = fs::read_to_string(Sconfig.params.n_pass)?;
-    let mut sim = Sim::new(config);
-      sim.add_species(1.0, 1.0, 1E-3);
-      sim.add_species(-1.0, 1.0, 1E-3);
-      println!["hi"];
-      sim.run();
+
+    let sim = Sim::new(config);
+    let mut prtls = Vec::<Prtl>::new();
+    // Add ions to prtls list
+    prtls.push(Prtl::new(&sim, 1.0, 1.0, 1E-3));
+    // Add lecs to prtls list
+    prtls.push(Prtl::new(&sim, 1.0, 1.0, 1E-3));
+    let mut flds = Flds::new(&sim);
+    for t in 1 .. sim.t_final + 1 {
+        // Zero out currents
+        for (jx, jy, jz) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z) {
+            *jx = 0.; *jy = 0.; *jz = 0.;
+        }
+
+        // deposit currents
+        for prtl in prtls.iter_mut(){
+            sim.move_and_deposit(prtl, &mut flds);
+        }
+
+        // solve field
+        // self.fieldSolver()
+
+        // push prtls
+
+        for prtl in prtls.iter_mut(){
+            prtl.boris_push(&sim, &flds);
+        }
+
+        // let sim.t = t;
+    }
+
 
     Ok(())
 }
 
-fn binomial_filter_2_d(in_vec: &mut Vec::<f32>, wrkspace: &mut Vec::<f32>) {
+fn binomial_filter_2_d(sim: &Sim,in_vec: &mut Vec::<f32>, wrkspace: &mut Vec::<f32>) {
     // wrkspace should be same size as fld
     let weights: [f32; 3] = [0.25, 0.5, 0.25];
     // account for ghost zones
     // FIRST FILTER IN X-DIRECTION
-    for _ in 0 .. *N_PASS {
-        for i in (1 .. (*SIZE_Y + 1)*(*SIZE_X + 2)).step_by(*SIZE_X + 2) {
-            for j in 1 .. *SIZE_X + 1 {
+    for _ in 0 .. sim.n_pass {
+        for i in (1 .. (sim.size_y + 1)*(sim.size_x + 2)).step_by(sim.size_x+ 2) {
+            for j in 1 .. sim.size_x + 1 {
                 wrkspace[i] = weights.iter()
                                 .zip(&in_vec[i + j - 1 .. i + j + 1])
                                 .map(|(&w, &f)| w * f)
                                 .sum::<f32>();
             }
         // handle the ghost zones in x direction
-        wrkspace[i - 1] = wrkspace[i + *SIZE_X];
-        wrkspace[i + *SIZE_X + 1 ] = wrkspace[i];
+        wrkspace[i - 1] = wrkspace[i + sim.size_x];
+        wrkspace[i + sim.size_x + 1 ] = wrkspace[i];
     }
     // handle the ghost zones in y direction
     // I COULD DO THIS WITH MEMCPY AND I KNOW IT IS POSSIBLE WITH SAFE
     // RUST BUT I DON'T KNOW HOW :(
 
-        for j in 0 .. *SIZE_X + 2 {
-            wrkspace[j] = wrkspace[*SIZE_Y * *SIZE_X  + j];
-            wrkspace[(*SIZE_Y + 1) * *SIZE_X  + j] =wrkspace[*SIZE_X  + j];
+        for j in 0 .. sim.size_x + 2 {
+            wrkspace[j] = wrkspace[sim.size_y * sim.size_x  + j];
+            wrkspace[(sim.size_y + 1) * sim.size_x  + j] = wrkspace[sim.size_x  + j];
         }
         // NOW FILTER IN Y-DIRECTION AND PUT VALS IN in_vec
-        for i in (1 .. (*SIZE_Y + 1)*(*SIZE_X + 2)).step_by(*SIZE_X + 2) {
-            for j in 1 .. *SIZE_X + 1 {
+        for i in (1 .. (sim.size_y + 1)*(sim.size_x + 2)).step_by(sim.size_x + 2) {
+            for j in 1 .. sim.size_x + 1 {
                 in_vec[i] = weights.iter()
-                                .zip(wrkspace[i + j - (*SIZE_X + 2) .. i + j + (*SIZE_X + 2)].iter().step_by(*SIZE_X + 2))
+                                .zip(wrkspace[i + j - (sim.size_x + 2) .. i + j + (sim.size_x + 2)].iter().step_by(sim.size_x + 2))
                                 .map(|(&w, &f)| w * f)
                                 .sum::<f32>();
             }
             // handle the ghost zones in x direction
-            in_vec[i - 1] = in_vec[i + *SIZE_X];
-            in_vec[i + *SIZE_X + 1 ] = in_vec[i];
+            in_vec[i - 1] = in_vec[i + sim.size_x];
+            in_vec[i + sim.size_x + 1 ] = in_vec[i];
         }
         // handle the ghost zones in y direction
         // I COULD DO THIS WITH MEMCPY AND I KNOW IT IS POSSIBLE WITH SAFE
         // RUST BUT I DON'T KNOW HOW :(
 
-        for j in 0 .. *SIZE_X + 2 {
-            in_vec[j] = in_vec[*SIZE_Y * *SIZE_X  + j];
-            in_vec[(*SIZE_Y + 1) * *SIZE_X  + j] = in_vec[*SIZE_X  + j];
+        for j in 0 .. sim.size_x + 2 {
+            in_vec[j] = in_vec[sim.size_y * sim.size_x  + j];
+            in_vec[(sim.size_y + 1) * sim.size_x  + j] = in_vec[sim.size_x  + j];
         }
     }
 }
-
+struct Flds {
+    e_x: Vec<f32>,
+    e_y: Vec<f32>,
+    e_z: Vec<f32>,
+    b_x: Vec<f32>,
+    b_y: Vec<f32>,
+    b_z: Vec<f32>,
+    j_x: Vec<f32>,
+    j_y: Vec<f32>,
+    j_z: Vec<f32>,
+}
+impl Flds {
+    fn new(sim: &Sim) ->  Flds {
+        Flds {
+            e_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)], // 2 Ghost zones. 1 at 0, 1 at SIZE_X
+            e_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            e_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            j_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            j_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            j_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)]
+        }
+    }
+}
 struct Sim {
-    e_x: Vec::<f32>,
-    e_y: Vec::<f32>,
-    e_z: Vec::<f32>,
-    b_x: Vec::<f32>,
-    b_y: Vec::<f32>,
-    b_z: Vec::<f32>,
-    j_x: Vec::<f32>,
-    j_y: Vec::<f32>,
-    j_z: Vec::<f32>,
-    prtls: Vec<Prtl>,
+    // flds: Flds,
+    // prtls: Vec<Prtl>,
     t: u32,
+    t_final: u32,
+    size_x: usize,
+    size_y: usize,
+    delta: usize,
+    dt: f32,
+    c: f32,
+    dens: u32,
+    gamma_inj: f32, // Speed of upstream flow
+    prtl_num: usize, // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
+    n_pass: u32 // = 4; //Number of filter passes
 }
 
 impl Sim {
-    fn new(_cfg: Config) ->  Sim {
+    fn new(cfg: Config) ->  Sim {
         Sim {
-            e_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)], // 3 Ghost zones. 1 at 0, 2 at SIZE_X
-            e_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            e_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            b_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            b_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            b_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            j_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            j_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            j_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            prtls: Vec::<Prtl>::new(),
             t: 0,
+            t_final: cfg.setup.t_final,
+            size_x: cfg.params.size_x,
+            size_y: cfg.params.size_y,
+            delta: cfg.params.delta,
+            dt: cfg.params.dt,
+            c: cfg.params.c,
+            dens: cfg.params.dens,
+            gamma_inj: cfg.params.gamma_inj, // Speed of upstream flow
+            prtl_num: cfg.params.dens as usize * (cfg.params.size_x - 2 * cfg.params.delta) * cfg.params.size_y,
+            n_pass: cfg.params.n_pass
         }
     }
-    fn add_species (&mut self, charge: f32, mass: f32, vth: f32) {
-        let beta = charge * 0.5 * mass * *DT;
-        let alpha = charge * 0.5 * mass * *DT / *C;
-        let mut prtl = Prtl {
-            ix: vec![0; *PRTL_NUM],
-            dx: vec![0f32; *PRTL_NUM],
-            iy: vec![0; *PRTL_NUM],
-            dy: vec![0f32; *PRTL_NUM],
-            px: vec![0f32; *PRTL_NUM],
-            py: vec![0f32; *PRTL_NUM],
-            pz: vec![0f32; *PRTL_NUM],
-            psa: vec![0f32; *PRTL_NUM],
-            charge: charge,
-            // mass: mass,
-            vth: vth,
-            alpha: alpha,
-            beta: beta
-        };
-        prtl.initialize_positions();
-        prtl.initialize_velocities();
-        prtl.apply_bc();
 
-        self.prtls.push(prtl);
-    }
-    fn run (&mut self) {
-        for _ in 0..10 {
-            // Zero out currents
-            for (jx, jy, jz) in izip!(&mut self.j_x, &mut self.j_y, &mut self.j_z) {
-                *jx = 0.; *jy = 0.; *jz = 0.;
+    fn deposit_current (&self, prtl: &Prtl, flds: &mut Flds) {
+        // local vars we will use
+        let mut ij: usize; let mut ijm1: usize; let mut ijp1: usize;
+
+        // for the weights
+        let mut w00: f32; let mut w01: f32; let mut w02: f32;
+        let mut w10: f32; let mut w11: f32; let mut w12: f32;
+        let mut w20: f32; let mut w21: f32; let mut w22: f32;
+
+        let mut vx: f32; let mut vy: f32; let mut vz: f32;
+        let mut psa_inv: f32;
+
+        for (ix, iy, dx, dy, px, py, pz, psa) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy, &prtl.px, &prtl.py, &prtl.pz, &prtl.psa) {
+            ijm1 = iy - 1;
+            ijp1 = iy + 1;
+            //if ix1 >= *SIZE_X {
+            //    ix1 -= *SIZE_X;
+            //    ix2 -= *SIZE_X;
+            //} else if ix2 >= *SIZE_X {
+            //    ix2 -= *SIZE_X;
+            //}
+            ij = iy *  (2 + self.size_x); ijm1 *= 2 + self.size_x; ijp1 *= 2 + self.size_x;
+            psa_inv = psa.powf(-1.0);
+            vx = prtl.charge * px * psa_inv;
+            vy = prtl.charge * py * psa_inv;
+            vz = prtl.charge * pz * psa_inv;
+            // CALC WEIGHTS
+            // 2nd order
+            // The weighting scheme prtl is in middle
+            // # ----------------------
+            // # | w0,0 | w0,1 | w0,2 |
+            // # ----------------------
+            // # | w1,0 | w1,1 | w1,2 |
+            // # ----------------------
+            // # | w2,0 | w2,1 | w2,2 |
+            // # ----------------------
+            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
+            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
+            w12 = (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w20 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w21 = 0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
+            w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+
+            // Deposit the CURRENT
+            unsafe {
+                *flds.j_x.get_unchecked_mut(ijm1 + ix -1) += w00 * vx;
+                *flds.j_x.get_unchecked_mut(ijm1 + ix) += w01 * vx;
+                *flds.j_x.get_unchecked_mut(ijm1 + ix + 1) += w02 * vx;
+                *flds.j_x.get_unchecked_mut(ij + ix - 1) += w10 * vx;
+                *flds.j_x.get_unchecked_mut(ij + ix) += w11 * vx;
+                *flds.j_x.get_unchecked_mut(ij + ix + 1) += w12 * vx;
+                *flds.j_x.get_unchecked_mut(ijp1 + ix - 1) += w20 * vx;
+                *flds.j_x.get_unchecked_mut(ijp1 + ix) += w21 * vx;
+                *flds.j_x.get_unchecked_mut(ijp1 + ix + 1) += w22 * vx;
+
+                *flds.j_y.get_unchecked_mut(ijm1 + ix - 1) += w00 * vy;
+                *flds.j_y.get_unchecked_mut(ijm1 + ix) += w01 * vy;
+                *flds.j_y.get_unchecked_mut(ijm1 + ix + 1) += w02 * vy;
+                *flds.j_y.get_unchecked_mut(ij + ix - 1) += w10 * vy;
+                *flds.j_y.get_unchecked_mut(ij + ix) += w11 * vy;
+                *flds.j_y.get_unchecked_mut(ij + ix + 1) += w12 * vy;
+                *flds.j_y.get_unchecked_mut(ijp1 + ix - 1) += w20 * vy;
+                *flds.j_y.get_unchecked_mut(ijp1 + ix) += w21 * vy;
+                *flds.j_y.get_unchecked_mut(ijp1 + ix + 1) += w22 * vy;
+
+                *flds.j_z.get_unchecked_mut(ijm1 + ix - 1) += w00 * vz;
+                *flds.j_z.get_unchecked_mut(ijm1 + ix) += w01 * vz;
+                *flds.j_z.get_unchecked_mut(ijm1 + ix + 1) += w02 * vz;
+                *flds.j_z.get_unchecked_mut(ij + ix - 1) += w10 * vz;
+                *flds.j_z.get_unchecked_mut(ij + ix) += w11 * vz;
+                *flds.j_z.get_unchecked_mut(ij + ix + 1) += w12 * vz;
+                *flds.j_z.get_unchecked_mut(ijp1 + ix - 1) += w20 * vz;
+                *flds.j_z.get_unchecked_mut(ijp1 + ix) += w21 * vz;
+                *flds.j_z.get_unchecked_mut(ijp1 + ix + 1) += w22 * vz;
             }
-
-            // deposit currents
-            for prtl in self.prtls.iter_mut(){
-                prtl.move_and_deposit(&mut self.j_x, &mut self.j_y, &mut self.j_z);
-            }
-
-
-            // solve field
-            // self.fieldSolver()
-
-            // push prtls
-
-            for prtl in self.prtls.iter_mut(){
-                prtl.boris_push(&self.e_x, &self.e_y, &self.e_z,
-                    &self.b_x, &self.b_y, &self.b_z);
-            }
-
-            self.t += 1
         }
+    }
+    fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
+        // FIRST we update positions of particles
+        let mut c1: f32;
+        for (ix, iy, dx, dy, px, py, psa) in izip!(&mut prtl.ix, &mut prtl.iy, &mut prtl.dx, &mut prtl.dy, & prtl.px, & prtl.py, & prtl.psa) {
+            c1 =  0.5 * self.dt * psa.powi(-1);
+            *dx += c1 * px;
+            if *dx >= 0.5 {
+                *dx -= 1.0;
+                *ix += 1;
+            } else if *dx < -0.5 {
+                *dx += 1.0;
+                *ix -= 1;
+            }
+            *dy += c1 * py;
+            if *dy >= 0.5 {
+                *dy -= 1.0;
+                *iy += 1;
+            } else if *dy < -0.5 {
+                *dy += 1.0;
+                *iy -= 1;
+            }
+        }
+        //self.dsty *=0
+        prtl.apply_bc(self);
+
+
+        // Deposit currents
+        self.deposit_current(prtl, flds);
+
+        // UPDATE POS AGAIN!
+        for (ix, iy, dx, dy, px, py, psa) in izip!(&mut prtl.ix, &mut prtl.iy, &mut prtl.dx, &mut prtl.dy, & prtl.px, & prtl.py, & prtl.psa) {
+            c1 =  0.5 * self.dt * psa.powi(-1);
+            *dx += c1 * px;
+            if *dx >= 0.5 {
+                *dx -= 1.0;
+                *ix += 1;
+            } else if *dx < -0.5 {
+                *dx += 1.0;
+                *ix -= 1;
+            }
+            *dy += c1 * py;
+            if *dy >= 0.5 {
+                *dy -= 1.0;
+                *iy += 1;
+            } else if *dy < -0.5 {
+                *dy += 1.0;
+                *iy -= 1;
+            }
+        }
+        prtl.apply_bc(self);
+
+        // # CALCULATE DENSITY
+        //calculateDens(self.x, self.y, self.dsty)#, self.charge)
+        //self.sim.dsty += self.charge*self.dsty
     }
 }
+
 
 struct Prtl {
     ix: Vec<usize>,
@@ -202,18 +335,41 @@ struct Prtl {
 }
 
 impl Prtl {
-    fn apply_bc(&mut self){
+    fn new (sim: &Sim, charge: f32, mass: f32, vth: f32) -> Prtl {
+        let beta = charge * 0.5 * mass * sim.dt;
+        let alpha = charge * 0.5 * mass * sim.dt / sim.c;
+        let mut prtl = Prtl {
+            ix: vec![0; sim.prtl_num],
+            dx: vec![0f32; sim.prtl_num],
+            iy: vec![0; sim.prtl_num],
+            dy: vec![0f32; sim.prtl_num],
+            px: vec![0f32; sim.prtl_num],
+            py: vec![0f32; sim.prtl_num],
+            pz: vec![0f32; sim.prtl_num],
+            psa: vec![0f32; sim.prtl_num],
+            charge: charge,
+            vth: vth,
+            alpha: alpha,
+            beta: beta
+        };
+        prtl.initialize_positions(sim);
+        prtl.initialize_velocities(sim);
+        prtl.apply_bc(sim);
+        prtl
+    }
+    fn apply_bc(&mut self, sim: &Sim){
         // PERIODIC BOUNDARIES IN Y
         // First iterate over y array and apply BC
         for iy in self.iy.iter_mut() {
             if *iy < 1 {
-                *iy += *SIZE_Y;
-            } else if *iy > *SIZE_Y {
-                *iy -= *SIZE_Y;
+                *iy += sim.size_y;
+            } else if *iy > sim.size_y {
+                *iy -= sim.size_y;
             }
         }
         // Now iterate over x array
-        let c1 = *SIZE_X - *DELTA;
+        // x boundary conditions are incorrect
+        let c1 = sim.size_x - sim.delta;
         let c2 = 2 * c1;
         // Let len = std::cmp::min(xs.len(), pxs.len());
         for (ix, px) in self.ix.iter_mut().zip(self.px.iter_mut()) {
@@ -223,14 +379,14 @@ impl Prtl {
              }
          }
     }
-    fn initialize_positions(&mut self) {
+    fn initialize_positions(&mut self, sim: &Sim) {
         // A method to calculate the initial, non-random
         // position of the particles
         let mut c1 = 0;
         // let mut rng = thread_rng();
-        for i in 0 .. *SIZE_Y {
-            for j in *DELTA .. *SIZE_X - *DELTA {
-                for k in 0 .. *DENS {
+        for i in 0 .. sim.size_y {
+            for j in sim.delta .. sim.size_x - sim.delta {
+                for k in 0 .. sim.dens as usize {
                     // RANDOM OPT
                     // let r1: f32 = rng.sample(Standard);
                     // let r2: f32 = rng.sample(Standard);
@@ -241,14 +397,14 @@ impl Prtl {
                     self.iy[c1 + k] = i + 1;
                     self.ix[c1 + k] = j + 1;
 
-                    let mut r1 = 1.0/(2.0 * (*DENS as f32));
+                    let mut r1 = 1.0/(2.0 * (sim.dens as f32));
                     r1 = (2.*(k as f32) +1.) * r1;
                     self.dx[c1+k] = r1 - 0.5;
                     self.dy[c1+k] = r1 - 0.5;
 
 
                 }
-                c1 += *DENS;
+                c1 += sim.dens as usize;
                 // helper_arr = -.5+0.25+np.arange(dens)*.5
             }
 
@@ -260,38 +416,40 @@ impl Prtl {
         //        yArr[c1:c1+dens] = helper_arr + i
         //        c1+=dens
     }
-    fn initialize_velocities(&mut self) {
+    fn initialize_velocities(&mut self, sim: &Sim) {
         //placeholder
         let mut rng = thread_rng();
+        let beta_inj = f32::sqrt(1.-sim.gamma_inj.powi(-2));
+        let csqinv = 1./(sim.c * sim.c);
         for (px, py, pz, psa) in izip!(&mut self.px, &mut self.py, &mut self.pz, &mut self.psa)
              {
             *px = rng.sample(StandardNormal);
-            *px *= self.vth * *C;
+            *px *= self.vth * sim.c;
             *py = rng.sample(StandardNormal);
-            *py *= self.vth * *C;
+            *py *= self.vth * sim.c;
             *pz = rng.sample(StandardNormal);
-            *pz *= self.vth * *C;
-            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) * *CSQINV;
+            *pz *= self.vth * sim.c;
+            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv;
             *psa = psa.sqrt();
 
             // Flip the px according to zenitani 2015
-            let mut ux = *px / *C;
+            let mut ux = *px / sim.c;
             let rand: f32 = rng.sample(Standard);
-            if - *BETA_INJ * ux > rand * *psa {
+            if - beta_inj * ux > rand * *psa {
                 ux *= -1.
             }
-            *px = *GAMMA_INJ * (ux + *BETA_INJ * *psa); // not p yet... really ux-prime
-            *px *= *C;
-            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz)/(*C * *C);
+            *px = sim.gamma_inj * (ux + beta_inj * *psa); // not p yet... really ux-prime
+            *px *= sim.c;
+            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv;
             *psa = psa.sqrt();
         }
 
     }
-    fn boris_push(&mut self, ex: &Vec::<f32>, ey: &Vec::<f32>, ez: &Vec::<f32>,
-        bx: &Vec::<f32>, by: &Vec::<f32>, bz: &Vec::<f32>) {
+    fn boris_push(&mut self, sim: &Sim, flds: &Flds) {
         // local vars we will use
         let mut ijm1: usize; let mut ijp1: usize; let mut ij: usize;
 
+        let csqinv = 1./(sim.c * sim.c);
         // for the weights
         let mut w00: f32; let mut w01: f32; let mut w02: f32;
         let mut w10: f32; let mut w11: f32; let mut w12: f32;
@@ -306,7 +464,7 @@ impl Prtl {
         for (ix, iy, dx, dy, px, py, pz, psa) in izip!(&self.ix, &self.iy, &self.dx, &self.dy, &mut self.px, &mut self.py, &mut self.pz, &mut self.psa) {
             ijm1 = iy - 1;
             ijp1 = iy + 1;
-            ij = iy * (2 + *SIZE_X); ijm1 *= 2 + *SIZE_X; ijp1 *= 2 + *SIZE_X;
+            ij = iy * (2 + sim.size_x); ijm1 *= 2 + sim.size_x; ijp1 *= 2 + sim.size_x;
             // CALC WEIGHTS
             // 2nd order
             // The weighting scheme prtl is in middle
@@ -330,126 +488,126 @@ impl Prtl {
             // INTERPOLATE ALL THE FIELDS
             if cfg!(feature = "unsafe") {
                 unsafe {
-                    ext = w00 * ex.get_unchecked(ij + ix - 1);
-                    ext += w01 * ex.get_unchecked(ij + ix);
-                    ext += w02 * ex.get_unchecked(ij + ix + 1);
-                    ext += w10 * ex.get_unchecked(ijm1 + ix - 1);
-                    ext += w11 * ex.get_unchecked(ijm1 + ix);
-                    ext += w12 * ex.get_unchecked(ijm1 + ix + 1);
-                    ext += w20 * ex.get_unchecked(ijp1 + ix - 1);
-                    ext += w21 * ex.get_unchecked(ijp1 + ix);
-                    ext += w22 * ex.get_unchecked(ijp1 + ix + 1);
+                    ext = w00 * flds.e_x.get_unchecked(ij + ix - 1);
+                    ext += w01 * flds.e_x.get_unchecked(ij + ix);
+                    ext += w02 * flds.e_x.get_unchecked(ij + ix + 1);
+                    ext += w10 * flds.e_x.get_unchecked(ijm1 + ix - 1);
+                    ext += w11 * flds.e_x.get_unchecked(ijm1 + ix);
+                    ext += w12 * flds.e_x.get_unchecked(ijm1 + ix + 1);
+                    ext += w20 * flds.e_x.get_unchecked(ijp1 + ix - 1);
+                    ext += w21 * flds.e_x.get_unchecked(ijp1 + ix);
+                    ext += w22 * flds.e_x.get_unchecked(ijp1 + ix + 1);
 
-                    eyt = w00 * ey.get_unchecked(ij + ix - 1);
-                    eyt += w01 * ey.get_unchecked(ij + ix);
-                    eyt += w02 * ey.get_unchecked(ij + ix + 1);
-                    eyt += w10 * ey.get_unchecked(ijm1 + ix - 1);
-                    eyt += w11 * ey.get_unchecked(ijm1 + ix);
-                    eyt += w12 * ey.get_unchecked(ijm1 + ix + 1);
-                    eyt += w20 * ey.get_unchecked(ijp1 + ix - 1);
-                    eyt += w21 * ey.get_unchecked(ijp1 + ix);
-                    eyt += w22 * ey.get_unchecked(ijp1 + ix + 1);
+                    eyt = w00 * flds.e_y.get_unchecked(ij + ix - 1);
+                    eyt += w01 * flds.e_y.get_unchecked(ij + ix);
+                    eyt += w02 * flds.e_y.get_unchecked(ij + ix + 1);
+                    eyt += w10 * flds.e_y.get_unchecked(ijm1 + ix - 1);
+                    eyt += w11 * flds.e_y.get_unchecked(ijm1 + ix);
+                    eyt += w12 * flds.e_y.get_unchecked(ijm1 + ix + 1);
+                    eyt += w20 * flds.e_y.get_unchecked(ijp1 + ix - 1);
+                    eyt += w21 * flds.e_y.get_unchecked(ijp1 + ix);
+                    eyt += w22 * flds.e_y.get_unchecked(ijp1 + ix + 1);
 
-                    ezt = w00 * ez.get_unchecked(ij + ix - 1);
-                    ezt += w01 * ez.get_unchecked(ij + ix);
-                    ezt += w02 * ez.get_unchecked(ij + ix + 1);
-                    ezt += w10 * ez.get_unchecked(ijm1 + ix - 1);
-                    ezt += w11 * ez.get_unchecked(ijm1 + ix);
-                    ezt += w12 * ez.get_unchecked(ijm1 + ix + 1);
-                    ezt += w20 * ez.get_unchecked(ijp1 + ix - 1);
-                    ezt += w21 * ez.get_unchecked(ijp1 + ix);
-                    ezt += w22 * ez.get_unchecked(ijp1 + ix + 1);
+                    ezt = w00 * flds.e_z.get_unchecked(ij + ix - 1);
+                    ezt += w01 * flds.e_z.get_unchecked(ij + ix);
+                    ezt += w02 * flds.e_z.get_unchecked(ij + ix + 1);
+                    ezt += w10 * flds.e_z.get_unchecked(ijm1 + ix - 1);
+                    ezt += w11 * flds.e_z.get_unchecked(ijm1 + ix);
+                    ezt += w12 * flds.e_z.get_unchecked(ijm1 + ix + 1);
+                    ezt += w20 * flds.e_z.get_unchecked(ijp1 + ix - 1);
+                    ezt += w21 * flds.e_z.get_unchecked(ijp1 + ix);
+                    ezt += w22 * flds.e_z.get_unchecked(ijp1 + ix + 1);
 
-                    bxt = w00 * bx.get_unchecked(ij + ix - 1);
-                    bxt += w01 * bx.get_unchecked(ij + ix);
-                    bxt += w02 * bx.get_unchecked(ij + ix + 1);
-                    bxt += w10 * bx.get_unchecked(ijm1 + ix - 1);
-                    bxt += w11 * bx.get_unchecked(ijm1 + ix);
-                    bxt += w12 * bx.get_unchecked(ijm1 + ix + 1);
-                    bxt += w20 * bx.get_unchecked(ijp1 + ix - 1);
-                    bxt += w21 * bx.get_unchecked(ijp1 + ix);
-                    bxt += w22 * bx.get_unchecked(ijp1 + ix + 1);
+                    bxt = w00 * flds.b_x.get_unchecked(ij + ix - 1);
+                    bxt += w01 * flds.b_x.get_unchecked(ij + ix);
+                    bxt += w02 * flds.b_x.get_unchecked(ij + ix + 1);
+                    bxt += w10 * flds.b_x.get_unchecked(ijm1 + ix - 1);
+                    bxt += w11 * flds.b_x.get_unchecked(ijm1 + ix);
+                    bxt += w12 * flds.b_x.get_unchecked(ijm1 + ix + 1);
+                    bxt += w20 * flds.b_x.get_unchecked(ijp1 + ix - 1);
+                    bxt += w21 * flds.b_x.get_unchecked(ijp1 + ix);
+                    bxt += w22 * flds.b_x.get_unchecked(ijp1 + ix + 1);
 
-                    byt = w00 * by.get_unchecked(ij + ix - 1);
-                    byt += w01 * by.get_unchecked(ij + ix);
-                    byt += w02 * by.get_unchecked(ij + ix + 1);
-                    byt += w10 * by.get_unchecked(ijm1 + ix - 1);
-                    byt += w11 * by.get_unchecked(ijm1 + ix);
-                    byt += w12 * by.get_unchecked(ijm1 + ix + 1);
-                    byt += w20 * by.get_unchecked(ijp1 + ix - 1);
-                    byt += w21 * by.get_unchecked(ijp1 + ix);
-                    byt += w22 * by.get_unchecked(ijp1 + ix + 1);
+                    byt = w00 * flds.b_y.get_unchecked(ij + ix - 1);
+                    byt += w01 * flds.b_y.get_unchecked(ij + ix);
+                    byt += w02 * flds.b_y.get_unchecked(ij + ix + 1);
+                    byt += w10 * flds.b_y.get_unchecked(ijm1 + ix - 1);
+                    byt += w11 * flds.b_y.get_unchecked(ijm1 + ix);
+                    byt += w12 * flds.b_y.get_unchecked(ijm1 + ix + 1);
+                    byt += w20 * flds.b_y.get_unchecked(ijp1 + ix - 1);
+                    byt += w21 * flds.b_y.get_unchecked(ijp1 + ix);
+                    byt += w22 * flds.b_y.get_unchecked(ijp1 + ix + 1);
 
-                    bzt = w00 * bz.get_unchecked(ij + ix - 1);
-                    bzt += w01 * bz.get_unchecked(ij + ix);
-                    bzt += w02 * bz.get_unchecked(ij + ix + 1);
-                    bzt += w10 * bz.get_unchecked(ijm1 + ix - 1);
-                    bzt += w11 * bz.get_unchecked(ijm1 + ix);
-                    bzt += w12 * bz.get_unchecked(ijm1 + ix + 1);
-                    bzt += w20 * bz.get_unchecked(ijp1 + ix - 1);
-                    bzt += w21 * bz.get_unchecked(ijp1 + ix);
-                    bzt += w22 * bz.get_unchecked(ijp1 + ix + 1);
+                    bzt = w00 * flds.b_z.get_unchecked(ij + ix - 1);
+                    bzt += w01 * flds.b_z.get_unchecked(ij + ix);
+                    bzt += w02 * flds.b_z.get_unchecked(ij + ix + 1);
+                    bzt += w10 * flds.b_z.get_unchecked(ijm1 + ix - 1);
+                    bzt += w11 * flds.b_z.get_unchecked(ijm1 + ix);
+                    bzt += w12 * flds.b_z.get_unchecked(ijm1 + ix + 1);
+                    bzt += w20 * flds.b_z.get_unchecked(ijp1 + ix - 1);
+                    bzt += w21 * flds.b_z.get_unchecked(ijp1 + ix);
+                    bzt += w22 * flds.b_z.get_unchecked(ijp1 + ix + 1);
                 }
             } else {
-                ext = w00 * ex[ij + ix - 1];
-                ext += w01 * ex[ij + ix];
-                ext += w02 * ex[ij + ix + 1];
-                ext += w10 * ex[ijm1 + ix - 1];
-                ext += w11 * ex[ijm1 + ix];
-                ext += w12 * ex[ijm1 + ix + 1];
-                ext += w20 * ex[ijp1 + ix - 1];
-                ext += w21 * ex[ijp1 + ix];
-                ext += w22 * ex[ijp1 + ix + 1];
+                ext = w00 * flds.e_x[ij + ix - 1];
+                ext += w01 * flds.e_x[ij + ix];
+                ext += w02 * flds.e_x[ij + ix + 1];
+                ext += w10 * flds.e_x[ijm1 + ix - 1];
+                ext += w11 * flds.e_x[ijm1 + ix];
+                ext += w12 * flds.e_x[ijm1 + ix + 1];
+                ext += w20 * flds.e_x[ijp1 + ix - 1];
+                ext += w21 * flds.e_x[ijp1 + ix];
+                ext += w22 * flds.e_x[ijp1 + ix + 1];
 
-                eyt = w00 * ey[ij + ix - 1];
-                eyt += w01 * ey[ij + ix];
-                eyt += w02 * ey[ij + ix + 1];
-                eyt += w10 * ey[ijm1 + ix - 1];
-                eyt += w11 * ey[ijm1 + ix];
-                eyt += w12 * ey[ijm1 + ix + 1];
-                eyt += w20 * ey[ijp1 + ix - 1];
-                eyt += w21 * ey[ijp1 + ix];
-                eyt += w22 * ey[ijp1 + ix + 1];
+                eyt = w00 * flds.e_y[ij + ix - 1];
+                eyt += w01 * flds.e_y[ij + ix];
+                eyt += w02 * flds.e_y[ij + ix + 1];
+                eyt += w10 * flds.e_y[ijm1 + ix - 1];
+                eyt += w11 * flds.e_y[ijm1 + ix];
+                eyt += w12 * flds.e_y[ijm1 + ix + 1];
+                eyt += w20 * flds.e_y[ijp1 + ix - 1];
+                eyt += w21 * flds.e_y[ijp1 + ix];
+                eyt += w22 * flds.e_y[ijp1 + ix + 1];
 
-                ezt = w00 * ez[ij + ix - 1];
-                ezt += w01 * ez[ij + ix];
-                ezt += w02 * ez[ij + ix + 1];
-                ezt += w10 * ez[ijm1 + ix - 1];
-                ezt += w11 * ez[ijm1 + ix];
-                ezt += w12 * ez[ijm1 + ix + 1];
-                ezt += w20 * ez[ijp1 + ix - 1];
-                ezt += w21 * ez[ijp1 + ix];
-                ezt += w22 * ez[ijp1 + ix + 1];
+                ezt = w00 * flds.e_z[ij + ix - 1];
+                ezt += w01 * flds.e_z[ij + ix];
+                ezt += w02 * flds.e_z[ij + ix + 1];
+                ezt += w10 * flds.e_z[ijm1 + ix - 1];
+                ezt += w11 * flds.e_z[ijm1 + ix];
+                ezt += w12 * flds.e_z[ijm1 + ix + 1];
+                ezt += w20 * flds.e_z[ijp1 + ix - 1];
+                ezt += w21 * flds.e_z[ijp1 + ix];
+                ezt += w22 * flds.e_z[ijp1 + ix + 1];
 
-                bxt = w00 * bx[ij + ix - 1];
-                bxt += w01 * bx[ij + ix];
-                bxt += w02 * bx[ij + ix + 1];
-                bxt += w10 * bx[ijm1 + ix - 1];
-                bxt += w11 * bx[ijm1 + ix];
-                bxt += w12 * bx[ijm1 + ix + 1];
-                bxt += w20 * bx[ijp1 + ix - 1];
-                bxt += w21 * bx[ijp1 + ix];
-                bxt += w22 * bx[ijp1 + ix + 1];
+                bxt = w00 * flds.b_x[ij + ix - 1];
+                bxt += w01 * flds.b_x[ij + ix];
+                bxt += w02 * flds.b_x[ij + ix + 1];
+                bxt += w10 * flds.b_x[ijm1 + ix - 1];
+                bxt += w11 * flds.b_x[ijm1 + ix];
+                bxt += w12 * flds.b_x[ijm1 + ix + 1];
+                bxt += w20 * flds.b_x[ijp1 + ix - 1];
+                bxt += w21 * flds.b_x[ijp1 + ix];
+                bxt += w22 * flds.b_x[ijp1 + ix + 1];
 
-                byt = w00 * by[ij + ix - 1];
-                byt += w01 * by[ij + ix];
-                byt += w02 * by[ij + ix + 1];
-                byt += w10 * by[ijm1 + ix - 1];
-                byt += w11 * by[ijm1 + ix];
-                byt += w12 * by[ijm1 + ix + 1];
-                byt += w20 * by[ijp1 + ix - 1];
-                byt += w21 * by[ijp1 + ix];
-                byt += w22 * by[ijp1 + ix + 1];
+                byt = w00 * flds.b_y[ij + ix - 1];
+                byt += w01 * flds.b_y[ij + ix];
+                byt += w02 * flds.b_y[ij + ix + 1];
+                byt += w10 * flds.b_y[ijm1 + ix - 1];
+                byt += w11 * flds.b_y[ijm1 + ix];
+                byt += w12 * flds.b_y[ijm1 + ix + 1];
+                byt += w20 * flds.b_y[ijp1 + ix - 1];
+                byt += w21 * flds.b_y[ijp1 + ix];
+                byt += w22 * flds.b_y[ijp1 + ix + 1];
 
-                bzt = w00 * bz[ij + ix - 1];
-                bzt += w01 * bz[ij + ix];
-                bzt += w02 * bz[ij + ix + 1];
-                bzt += w10 * bz[ijm1 + ix - 1];
-                bzt += w11 * bz[ijm1 + ix];
-                bzt += w12 * bz[ijm1 + ix + 1];
-                bzt += w20 * bz[ijp1 + ix - 1];
-                bzt += w21 * bz[ijp1 + ix];
-                bzt += w22 * bz[ijp1 + ix + 1];
+                bzt = w00 * flds.b_z[ij + ix - 1];
+                bzt += w01 * flds.b_z[ij + ix];
+                bzt += w02 * flds.b_z[ij + ix + 1];
+                bzt += w10 * flds.b_z[ijm1 + ix - 1];
+                bzt += w11 * flds.b_z[ijm1 + ix];
+                bzt += w12 * flds.b_z[ijm1 + ix + 1];
+                bzt += w20 * flds.b_z[ijp1 + ix - 1];
+                bzt += w21 * flds.b_z[ijp1 + ix];
+                bzt += w22 * flds.b_z[ijp1 + ix + 1];
             }
 
             ext *= self.beta; eyt *= self.beta; ezt *= self.beta;
@@ -459,7 +617,7 @@ impl Prtl {
             uy = *py + eyt;
             uz = *pz + ezt;
             pt = ux * ux + uy * uy + uz * uz;
-            gt = (1. + pt * *CSQINV ).sqrt().powi(-1);
+            gt = (1. + pt * csqinv).sqrt().powi(-1);
 
             bxt *= gt;
             byt *= gt;
@@ -475,142 +633,9 @@ impl Prtl {
             *py = uy + boris * (uzt * bxt - uxt * bzt) + eyt;
             *pz = uz + boris * (uxt * byt - uyt * bxt) + ezt;
 
-            *psa = (1.0 + (*px * *px + *py * *py + *pz * *pz) * *CSQINV).sqrt()
+            *psa = (1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv).sqrt()
         }
     }
-    fn deposit_current (&self, jx: &mut Vec::<f32>, jy: &mut Vec::<f32>, jz: &mut Vec::<f32>) {
-        // local vars we will use
-        let mut ij: usize; let mut ijm1: usize; let mut ijp1: usize;
-
-        // for the weights
-        let mut w00: f32; let mut w01: f32; let mut w02: f32;
-        let mut w10: f32; let mut w11: f32; let mut w12: f32;
-        let mut w20: f32; let mut w21: f32; let mut w22: f32;
-
-        let mut vx: f32; let mut vy: f32; let mut vz: f32;
-        let mut psa_inv: f32;
-
-        for (ix, iy, dx, dy, px, py, pz, psa) in izip!(&self.ix, &self.iy, &self.dx, &self.dy, &self.px, &self.py, &self.pz, &self.psa) {
-            ijm1 = iy - 1;
-            ijp1 = iy + 1;
-            //if ix1 >= *SIZE_X {
-            //    ix1 -= *SIZE_X;
-            //    ix2 -= *SIZE_X;
-            //} else if ix2 >= *SIZE_X {
-            //    ix2 -= *SIZE_X;
-            //}
-            ij = iy *  (2 + *SIZE_X); ijm1 *= 2 + *SIZE_X; ijp1 *= 2 + *SIZE_X;
-            psa_inv = psa.powf(-1.0);
-            vx = self.charge * px * psa_inv;
-            vy = self.charge * py * psa_inv;
-            vz = self.charge * pz * psa_inv;
-            // CALC WEIGHTS
-            // 2nd order
-            // The weighting scheme prtl is in middle
-            // # ----------------------
-            // # | w0,0 | w0,1 | w0,2 |
-            // # ----------------------
-            // # | w1,0 | w1,1 | w1,2 |
-            // # ----------------------
-            // # | w2,0 | w2,1 | w2,2 |
-            // # ----------------------
-            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
-            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
-            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
-            w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
-            w12 = (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
-            w20 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
-            w21 = 0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
-
-            // Deposit the CURRENT
-            unsafe {
-                *jx.get_unchecked_mut(ijm1 + ix -1) += w00 * vx;
-                *jx.get_unchecked_mut(ijm1 + ix) += w01 * vx;
-                *jx.get_unchecked_mut(ijm1 + ix + 1) += w02 * vx;
-                *jx.get_unchecked_mut(ij + ix - 1) += w10 * vx;
-                *jx.get_unchecked_mut(ij + ix) += w11 * vx;
-                *jx.get_unchecked_mut(ij + ix + 1) += w12 * vx;
-                *jx.get_unchecked_mut(ijp1 + ix - 1) += w20 * vx;
-                *jx.get_unchecked_mut(ijp1 + ix) += w21 * vx;
-                *jx.get_unchecked_mut(ijp1 + ix + 1) += w22 * vx;
-
-                *jy.get_unchecked_mut(ijm1 + ix - 1) += w00 * vy;
-                *jy.get_unchecked_mut(ijm1 + ix) += w01 * vy;
-                *jy.get_unchecked_mut(ijm1 + ix + 1) += w02 * vy;
-                *jy.get_unchecked_mut(ij + ix - 1) += w10 * vy;
-                *jy.get_unchecked_mut(ij + ix) += w11 * vy;
-                *jy.get_unchecked_mut(ij + ix + 1) += w12 * vy;
-                *jy.get_unchecked_mut(ijp1 + ix - 1) += w20 * vy;
-                *jy.get_unchecked_mut(ijp1 + ix) += w21 * vy;
-                *jy.get_unchecked_mut(ijp1 + ix + 1) += w22 * vy;
-
-                *jz.get_unchecked_mut(ijm1 + ix - 1) += w00 * vz;
-                *jz.get_unchecked_mut(ijm1 + ix) += w01 * vz;
-                *jz.get_unchecked_mut(ijm1 + ix + 1) += w02 * vz;
-                *jz.get_unchecked_mut(ij + ix - 1) += w10 * vz;
-                *jz.get_unchecked_mut(ij + ix) += w11 * vz;
-                *jz.get_unchecked_mut(ij + ix + 1) += w12 * vz;
-                *jz.get_unchecked_mut(ijp1 + ix - 1) += w20 * vz;
-                *jz.get_unchecked_mut(ijp1 + ix) += w21 * vz;
-                *jz.get_unchecked_mut(ijp1 + ix + 1) += w22 * vz;
-            }
-        }
-    }
-    fn move_and_deposit(&mut self,  jx: &mut Vec::<f32>, jy: &mut Vec::<f32>, jz: &mut Vec::<f32>) {
-        // FIRST we update positions of particles
-        let mut c1: f32;
-        for (ix, iy, dx, dy, px, py, psa) in izip!(&mut self.ix, &mut self.iy, &mut self.dx, &mut self.dy, & self.px, & self.py, & self.psa) {
-            c1 =  0.5 * *DT * psa.powi(-1);
-            *dx += c1 * px;
-            if *dx >= 0.5 {
-                *dx -= 1.0;
-                *ix += 1;
-            } else if *dx < -0.5 {
-                *dx += 1.0;
-                *ix -= 1;
-            }
-            *dy += c1 * py;
-            if *dy >= 0.5 {
-                *dy -= 1.0;
-                *iy += 1;
-            } else if *dy < -0.5 {
-                *dy += 1.0;
-                *iy -= 1;
-            }
-        }
-        //self.dsty *=0
-        self.apply_bc();
 
 
-        // Deposit currents
-        self.deposit_current(jx, jy, jz);
-
-        // UPDATE POS AGAIN!
-        for (ix, iy, dx, dy, px, py, psa) in izip!(&mut self.ix, &mut self.iy, &mut self.dx, &mut self.dy, & self.px, & self.py, & self.psa) {
-            c1 =  0.5 * *DT * psa.powi(-1);
-            *dx += c1 * px;
-            if *dx >= 0.5 {
-                *dx -= 1.0;
-                *ix += 1;
-            } else if *dx < -0.5 {
-                *dx += 1.0;
-                *ix -= 1;
-            }
-            *dy += c1 * py;
-            if *dy >= 0.5 {
-                *dy -= 1.0;
-                *iy += 1;
-            } else if *dy < -0.5 {
-                *dy += 1.0;
-                *iy -= 1;
-            }
-        }
-        self.apply_bc();
-
-        // # CALCULATE DENSITY
-        //calculateDens(self.x, self.y, self.dsty)#, self.charge)
-        //self.sim.dsty += self.charge*self.dsty
-    }
 }
