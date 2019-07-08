@@ -1,3 +1,4 @@
+
 use serde::{Deserialize};
 use std::fs;
 use std::error::Error;
@@ -6,7 +7,6 @@ use rand_distr::StandardNormal;
 use rand_distr::Standard;
 
 #[macro_use] extern crate itertools;
-//#[macro_use(array)] extern crate ndarray;
 
 #[derive(Deserialize)]
 pub struct Config {
@@ -246,36 +246,68 @@ impl Sim {
             w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
 
             // Deposit the CURRENT
-            unsafe {
-                *flds.j_x.get_unchecked_mut(ijm1 + ix -1) += w00 * vx;
-                *flds.j_x.get_unchecked_mut(ijm1 + ix) += w01 * vx;
-                *flds.j_x.get_unchecked_mut(ijm1 + ix + 1) += w02 * vx;
-                *flds.j_x.get_unchecked_mut(ij + ix - 1) += w10 * vx;
-                *flds.j_x.get_unchecked_mut(ij + ix) += w11 * vx;
-                *flds.j_x.get_unchecked_mut(ij + ix + 1) += w12 * vx;
-                *flds.j_x.get_unchecked_mut(ijp1 + ix - 1) += w20 * vx;
-                *flds.j_x.get_unchecked_mut(ijp1 + ix) += w21 * vx;
-                *flds.j_x.get_unchecked_mut(ijp1 + ix + 1) += w22 * vx;
+            if cfg!(feature = "unsafe") {
+                unsafe {
+                    *flds.j_x.get_unchecked_mut(ijm1 + ix -1) += w00 * vx;
+                    *flds.j_x.get_unchecked_mut(ijm1 + ix) += w01 * vx;
+                    *flds.j_x.get_unchecked_mut(ijm1 + ix + 1) += w02 * vx;
+                    *flds.j_x.get_unchecked_mut(ij + ix - 1) += w10 * vx;
+                    *flds.j_x.get_unchecked_mut(ij + ix) += w11 * vx;
+                    *flds.j_x.get_unchecked_mut(ij + ix + 1) += w12 * vx;
+                    *flds.j_x.get_unchecked_mut(ijp1 + ix - 1) += w20 * vx;
+                    *flds.j_x.get_unchecked_mut(ijp1 + ix) += w21 * vx;
+                    *flds.j_x.get_unchecked_mut(ijp1 + ix + 1) += w22 * vx;
 
-                *flds.j_y.get_unchecked_mut(ijm1 + ix - 1) += w00 * vy;
-                *flds.j_y.get_unchecked_mut(ijm1 + ix) += w01 * vy;
-                *flds.j_y.get_unchecked_mut(ijm1 + ix + 1) += w02 * vy;
-                *flds.j_y.get_unchecked_mut(ij + ix - 1) += w10 * vy;
-                *flds.j_y.get_unchecked_mut(ij + ix) += w11 * vy;
-                *flds.j_y.get_unchecked_mut(ij + ix + 1) += w12 * vy;
-                *flds.j_y.get_unchecked_mut(ijp1 + ix - 1) += w20 * vy;
-                *flds.j_y.get_unchecked_mut(ijp1 + ix) += w21 * vy;
-                *flds.j_y.get_unchecked_mut(ijp1 + ix + 1) += w22 * vy;
+                    *flds.j_y.get_unchecked_mut(ijm1 + ix - 1) += w00 * vy;
+                    *flds.j_y.get_unchecked_mut(ijm1 + ix) += w01 * vy;
+                    *flds.j_y.get_unchecked_mut(ijm1 + ix + 1) += w02 * vy;
+                    *flds.j_y.get_unchecked_mut(ij + ix - 1) += w10 * vy;
+                    *flds.j_y.get_unchecked_mut(ij + ix) += w11 * vy;
+                    *flds.j_y.get_unchecked_mut(ij + ix + 1) += w12 * vy;
+                    *flds.j_y.get_unchecked_mut(ijp1 + ix - 1) += w20 * vy;
+                    *flds.j_y.get_unchecked_mut(ijp1 + ix) += w21 * vy;
+                    *flds.j_y.get_unchecked_mut(ijp1 + ix + 1) += w22 * vy;
 
-                *flds.j_z.get_unchecked_mut(ijm1 + ix - 1) += w00 * vz;
-                *flds.j_z.get_unchecked_mut(ijm1 + ix) += w01 * vz;
-                *flds.j_z.get_unchecked_mut(ijm1 + ix + 1) += w02 * vz;
-                *flds.j_z.get_unchecked_mut(ij + ix - 1) += w10 * vz;
-                *flds.j_z.get_unchecked_mut(ij + ix) += w11 * vz;
-                *flds.j_z.get_unchecked_mut(ij + ix + 1) += w12 * vz;
-                *flds.j_z.get_unchecked_mut(ijp1 + ix - 1) += w20 * vz;
-                *flds.j_z.get_unchecked_mut(ijp1 + ix) += w21 * vz;
-                *flds.j_z.get_unchecked_mut(ijp1 + ix + 1) += w22 * vz;
+                    *flds.j_z.get_unchecked_mut(ijm1 + ix - 1) += w00 * vz;
+                    *flds.j_z.get_unchecked_mut(ijm1 + ix) += w01 * vz;
+                    *flds.j_z.get_unchecked_mut(ijm1 + ix + 1) += w02 * vz;
+                    *flds.j_z.get_unchecked_mut(ij + ix - 1) += w10 * vz;
+                    *flds.j_z.get_unchecked_mut(ij + ix) += w11 * vz;
+                    *flds.j_z.get_unchecked_mut(ij + ix + 1) += w12 * vz;
+                    *flds.j_z.get_unchecked_mut(ijp1 + ix - 1) += w20 * vz;
+                    *flds.j_z.get_unchecked_mut(ijp1 + ix) += w21 * vz;
+                    *flds.j_z.get_unchecked_mut(ijp1 + ix + 1) += w22 * vz;
+                }
+            } else {
+                flds.j_x[ijm1 + ix -1] += w00 * vx;
+                flds.j_x[ijm1 + ix] += w01 * vx;
+                flds.j_x[ijm1 + ix + 1] += w02 * vx;
+                flds.j_x[ij + ix - 1] += w10 * vx;
+                flds.j_x[ij + ix] += w11 * vx;
+                flds.j_x[ij + ix + 1] += w12 * vx;
+                flds.j_x[ijp1 + ix - 1] += w20 * vx;
+                flds.j_x[ijp1 + ix] += w21 * vx;
+                flds.j_x[ijp1 + ix + 1] += w22 * vx;
+
+                flds.j_y[ijm1 + ix -1] += w00 * vy;
+                flds.j_y[ijm1 + ix] += w01 * vy;
+                flds.j_y[ijm1 + ix + 1] += w02 * vy;
+                flds.j_y[ij + ix - 1] += w10 * vy;
+                flds.j_y[ij + ix] += w11 * vy;
+                flds.j_y[ij + ix + 1] += w12 * vy;
+                flds.j_y[ijp1 + ix - 1] += w20 * vy;
+                flds.j_y[ijp1 + ix] += w21 * vy;
+                flds.j_y[ijp1 + ix + 1] += w22 * vy;
+
+                flds.j_z[ijm1 + ix -1] += w00 * vz;
+                flds.j_z[ijm1 + ix] += w01 * vz;
+                flds.j_z[ijm1 + ix + 1] += w02 * vz;
+                flds.j_z[ij + ix - 1] += w10 * vz;
+                flds.j_z[ij + ix] += w11 * vz;
+                flds.j_z[ij + ix + 1] += w12 * vz;
+                flds.j_z[ijp1 + ix - 1] += w20 * vz;
+                flds.j_z[ijp1 + ix] += w21 * vz;
+                flds.j_z[ijp1 + ix + 1] += w22 * vz;
             }
         }
     }
@@ -534,123 +566,123 @@ impl Prtl {
             // INTERPOLATE ALL THE FIELDS
             if cfg!(feature = "unsafe") {
                 unsafe {
-                    ext = w00 * flds.e_x.get_unchecked(ij + ix - 1);
-                    ext += w01 * flds.e_x.get_unchecked(ij + ix);
-                    ext += w02 * flds.e_x.get_unchecked(ij + ix + 1);
-                    ext += w10 * flds.e_x.get_unchecked(ijm1 + ix - 1);
-                    ext += w11 * flds.e_x.get_unchecked(ijm1 + ix);
-                    ext += w12 * flds.e_x.get_unchecked(ijm1 + ix + 1);
+                    ext = w00 * flds.e_x.get_unchecked(ijm1 + ix - 1);
+                    ext += w01 * flds.e_x.get_unchecked(ijm1 + ix);
+                    ext += w02 * flds.e_x.get_unchecked(ijm1 + ix + 1);
+                    ext += w10 * flds.e_x.get_unchecked(ij + ix - 1);
+                    ext += w11 * flds.e_x.get_unchecked(ij + ix);
+                    ext += w12 * flds.e_x.get_unchecked(ij + ix + 1);
                     ext += w20 * flds.e_x.get_unchecked(ijp1 + ix - 1);
                     ext += w21 * flds.e_x.get_unchecked(ijp1 + ix);
                     ext += w22 * flds.e_x.get_unchecked(ijp1 + ix + 1);
 
-                    eyt = w00 * flds.e_y.get_unchecked(ij + ix - 1);
-                    eyt += w01 * flds.e_y.get_unchecked(ij + ix);
-                    eyt += w02 * flds.e_y.get_unchecked(ij + ix + 1);
-                    eyt += w10 * flds.e_y.get_unchecked(ijm1 + ix - 1);
-                    eyt += w11 * flds.e_y.get_unchecked(ijm1 + ix);
-                    eyt += w12 * flds.e_y.get_unchecked(ijm1 + ix + 1);
+                    eyt = w00 * flds.e_y.get_unchecked(ijm1 + ix - 1);
+                    eyt += w01 * flds.e_y.get_unchecked(ijm1 + ix);
+                    eyt += w02 * flds.e_y.get_unchecked(ijm1 + ix + 1);
+                    eyt += w10 * flds.e_y.get_unchecked(ij + ix - 1);
+                    eyt += w11 * flds.e_y.get_unchecked(ij + ix);
+                    eyt += w12 * flds.e_y.get_unchecked(ij + ix + 1);
                     eyt += w20 * flds.e_y.get_unchecked(ijp1 + ix - 1);
                     eyt += w21 * flds.e_y.get_unchecked(ijp1 + ix);
                     eyt += w22 * flds.e_y.get_unchecked(ijp1 + ix + 1);
 
-                    ezt = w00 * flds.e_z.get_unchecked(ij + ix - 1);
-                    ezt += w01 * flds.e_z.get_unchecked(ij + ix);
-                    ezt += w02 * flds.e_z.get_unchecked(ij + ix + 1);
-                    ezt += w10 * flds.e_z.get_unchecked(ijm1 + ix - 1);
-                    ezt += w11 * flds.e_z.get_unchecked(ijm1 + ix);
-                    ezt += w12 * flds.e_z.get_unchecked(ijm1 + ix + 1);
+                    ezt = w00 * flds.e_z.get_unchecked(ijm1 + ix - 1);
+                    ezt += w01 * flds.e_z.get_unchecked(ijm1 + ix);
+                    ezt += w02 * flds.e_z.get_unchecked(ijm1 + ix + 1);
+                    ezt += w10 * flds.e_z.get_unchecked(ij + ix - 1);
+                    ezt += w11 * flds.e_z.get_unchecked(ij + ix);
+                    ezt += w12 * flds.e_z.get_unchecked(ij + ix + 1);
                     ezt += w20 * flds.e_z.get_unchecked(ijp1 + ix - 1);
                     ezt += w21 * flds.e_z.get_unchecked(ijp1 + ix);
                     ezt += w22 * flds.e_z.get_unchecked(ijp1 + ix + 1);
 
-                    bxt = w00 * flds.b_x.get_unchecked(ij + ix - 1);
-                    bxt += w01 * flds.b_x.get_unchecked(ij + ix);
-                    bxt += w02 * flds.b_x.get_unchecked(ij + ix + 1);
-                    bxt += w10 * flds.b_x.get_unchecked(ijm1 + ix - 1);
-                    bxt += w11 * flds.b_x.get_unchecked(ijm1 + ix);
-                    bxt += w12 * flds.b_x.get_unchecked(ijm1 + ix + 1);
+                    bxt = w00 * flds.b_x.get_unchecked(ijm1 + ix - 1);
+                    bxt += w01 * flds.b_x.get_unchecked(ijm1 + ix);
+                    bxt += w02 * flds.b_x.get_unchecked(ijm1 + ix + 1);
+                    bxt += w10 * flds.b_x.get_unchecked(ij + ix - 1);
+                    bxt += w11 * flds.b_x.get_unchecked(ij + ix);
+                    bxt += w12 * flds.b_x.get_unchecked(ij + ix + 1);
                     bxt += w20 * flds.b_x.get_unchecked(ijp1 + ix - 1);
                     bxt += w21 * flds.b_x.get_unchecked(ijp1 + ix);
                     bxt += w22 * flds.b_x.get_unchecked(ijp1 + ix + 1);
 
-                    byt = w00 * flds.b_y.get_unchecked(ij + ix - 1);
-                    byt += w01 * flds.b_y.get_unchecked(ij + ix);
-                    byt += w02 * flds.b_y.get_unchecked(ij + ix + 1);
-                    byt += w10 * flds.b_y.get_unchecked(ijm1 + ix - 1);
-                    byt += w11 * flds.b_y.get_unchecked(ijm1 + ix);
-                    byt += w12 * flds.b_y.get_unchecked(ijm1 + ix + 1);
+                    byt = w00 * flds.b_y.get_unchecked(ijm1 + ix - 1);
+                    byt += w01 * flds.b_y.get_unchecked(ijm1 + ix);
+                    byt += w02 * flds.b_y.get_unchecked(ijm1 + ix + 1);
+                    byt += w10 * flds.b_y.get_unchecked(ij + ix - 1);
+                    byt += w11 * flds.b_y.get_unchecked(ij + ix);
+                    byt += w12 * flds.b_y.get_unchecked(ij + ix + 1);
                     byt += w20 * flds.b_y.get_unchecked(ijp1 + ix - 1);
                     byt += w21 * flds.b_y.get_unchecked(ijp1 + ix);
                     byt += w22 * flds.b_y.get_unchecked(ijp1 + ix + 1);
 
-                    bzt = w00 * flds.b_z.get_unchecked(ij + ix - 1);
-                    bzt += w01 * flds.b_z.get_unchecked(ij + ix);
-                    bzt += w02 * flds.b_z.get_unchecked(ij + ix + 1);
-                    bzt += w10 * flds.b_z.get_unchecked(ijm1 + ix - 1);
-                    bzt += w11 * flds.b_z.get_unchecked(ijm1 + ix);
-                    bzt += w12 * flds.b_z.get_unchecked(ijm1 + ix + 1);
+                    bzt = w00 * flds.b_z.get_unchecked(ijm1 + ix - 1);
+                    bzt += w01 * flds.b_z.get_unchecked(ijm1 + ix);
+                    bzt += w02 * flds.b_z.get_unchecked(ijm1 + ix + 1);
+                    bzt += w10 * flds.b_z.get_unchecked(ij + ix - 1);
+                    bzt += w11 * flds.b_z.get_unchecked(ij + ix);
+                    bzt += w12 * flds.b_z.get_unchecked(ij + ix + 1);
                     bzt += w20 * flds.b_z.get_unchecked(ijp1 + ix - 1);
                     bzt += w21 * flds.b_z.get_unchecked(ijp1 + ix);
                     bzt += w22 * flds.b_z.get_unchecked(ijp1 + ix + 1);
                 }
             } else {
-                ext = w00 * flds.e_x[ij + ix - 1];
-                ext += w01 * flds.e_x[ij + ix];
-                ext += w02 * flds.e_x[ij + ix + 1];
-                ext += w10 * flds.e_x[ijm1 + ix - 1];
-                ext += w11 * flds.e_x[ijm1 + ix];
-                ext += w12 * flds.e_x[ijm1 + ix + 1];
+                ext = w00 * flds.e_x[ijm1 + ix - 1];
+                ext += w01 * flds.e_x[ijm1 + ix];
+                ext += w02 * flds.e_x[ijm1 + ix + 1];
+                ext += w10 * flds.e_x[ij + ix - 1];
+                ext += w11 * flds.e_x[ij + ix];
+                ext += w12 * flds.e_x[ij + ix + 1];
                 ext += w20 * flds.e_x[ijp1 + ix - 1];
                 ext += w21 * flds.e_x[ijp1 + ix];
                 ext += w22 * flds.e_x[ijp1 + ix + 1];
 
-                eyt = w00 * flds.e_y[ij + ix - 1];
-                eyt += w01 * flds.e_y[ij + ix];
-                eyt += w02 * flds.e_y[ij + ix + 1];
-                eyt += w10 * flds.e_y[ijm1 + ix - 1];
-                eyt += w11 * flds.e_y[ijm1 + ix];
-                eyt += w12 * flds.e_y[ijm1 + ix + 1];
+                eyt = w00 * flds.e_y[ijm1 + ix - 1];
+                eyt += w01 * flds.e_y[ijm1 + ix];
+                eyt += w02 * flds.e_y[ijm1 + ix + 1];
+                eyt += w10 * flds.e_y[ij + ix - 1];
+                eyt += w11 * flds.e_y[ij + ix];
+                eyt += w12 * flds.e_y[ij + ix + 1];
                 eyt += w20 * flds.e_y[ijp1 + ix - 1];
                 eyt += w21 * flds.e_y[ijp1 + ix];
                 eyt += w22 * flds.e_y[ijp1 + ix + 1];
 
-                ezt = w00 * flds.e_z[ij + ix - 1];
-                ezt += w01 * flds.e_z[ij + ix];
-                ezt += w02 * flds.e_z[ij + ix + 1];
-                ezt += w10 * flds.e_z[ijm1 + ix - 1];
-                ezt += w11 * flds.e_z[ijm1 + ix];
-                ezt += w12 * flds.e_z[ijm1 + ix + 1];
+                ezt = w00 * flds.e_z[ijm1 + ix - 1];
+                ezt += w01 * flds.e_z[ijm1 + ix];
+                ezt += w02 * flds.e_z[ijm1 + ix + 1];
+                ezt += w10 * flds.e_z[ij + ix - 1];
+                ezt += w11 * flds.e_z[ij + ix];
+                ezt += w12 * flds.e_z[ij + ix + 1];
                 ezt += w20 * flds.e_z[ijp1 + ix - 1];
                 ezt += w21 * flds.e_z[ijp1 + ix];
                 ezt += w22 * flds.e_z[ijp1 + ix + 1];
 
-                bxt = w00 * flds.b_x[ij + ix - 1];
-                bxt += w01 * flds.b_x[ij + ix];
-                bxt += w02 * flds.b_x[ij + ix + 1];
-                bxt += w10 * flds.b_x[ijm1 + ix - 1];
-                bxt += w11 * flds.b_x[ijm1 + ix];
-                bxt += w12 * flds.b_x[ijm1 + ix + 1];
+                bxt = w00 * flds.b_x[ijm1 + ix - 1];
+                bxt += w01 * flds.b_x[ijm1 + ix];
+                bxt += w02 * flds.b_x[ijm1 + ix + 1];
+                bxt += w10 * flds.b_x[ij + ix - 1];
+                bxt += w11 * flds.b_x[ij + ix];
+                bxt += w12 * flds.b_x[ij + ix + 1];
                 bxt += w20 * flds.b_x[ijp1 + ix - 1];
                 bxt += w21 * flds.b_x[ijp1 + ix];
                 bxt += w22 * flds.b_x[ijp1 + ix + 1];
 
-                byt = w00 * flds.b_y[ij + ix - 1];
-                byt += w01 * flds.b_y[ij + ix];
-                byt += w02 * flds.b_y[ij + ix + 1];
-                byt += w10 * flds.b_y[ijm1 + ix - 1];
-                byt += w11 * flds.b_y[ijm1 + ix];
-                byt += w12 * flds.b_y[ijm1 + ix + 1];
+                byt = w00 * flds.b_y[ijm1 + ix - 1];
+                byt += w01 * flds.b_y[ijm1 + ix];
+                byt += w02 * flds.b_y[ijm1 + ix + 1];
+                byt += w10 * flds.b_y[ij + ix - 1];
+                byt += w11 * flds.b_y[ij + ix];
+                byt += w12 * flds.b_y[ij + ix + 1];
                 byt += w20 * flds.b_y[ijp1 + ix - 1];
                 byt += w21 * flds.b_y[ijp1 + ix];
                 byt += w22 * flds.b_y[ijp1 + ix + 1];
 
-                bzt = w00 * flds.b_z[ij + ix - 1];
-                bzt += w01 * flds.b_z[ij + ix];
-                bzt += w02 * flds.b_z[ij + ix + 1];
-                bzt += w10 * flds.b_z[ijm1 + ix - 1];
-                bzt += w11 * flds.b_z[ijm1 + ix];
-                bzt += w12 * flds.b_z[ijm1 + ix + 1];
+                bzt = w00 * flds.b_z[ijm1 + ix - 1];
+                bzt += w01 * flds.b_z[ijm1 + ix];
+                bzt += w02 * flds.b_z[ijm1 + ix + 1];
+                bzt += w10 * flds.b_z[ij + ix - 1];
+                bzt += w11 * flds.b_z[ij + ix];
+                bzt += w12 * flds.b_z[ij + ix + 1];
                 bzt += w20 * flds.b_z[ijp1 + ix - 1];
                 bzt += w21 * flds.b_z[ijp1 + ix];
                 bzt += w22 * flds.b_z[ijp1 + ix + 1];
