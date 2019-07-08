@@ -1,20 +1,20 @@
 [setup]
-t_final = 1001
+t_final = 10000
 
 [params]
-size_x = 3000
+size_x = 256
 size_y = 256
 delta = 0
 dt = 0.1 #
 c = 3.0 # Don't touch this.
-dens = 2 # of prtls per species per cell
+dens = 1 # of prtls per species per cell
 gamma_inj = 15.0 # Speed of upstream flow
 n_pass = 4 # Number of filter passes.
 
 [output]
-track_prtls = false # need to think of a better way of doing this.
+track_prtls = true # need to think of a better way of doing this.
 track_interval = 10 # In timesteps
 write_output = true # save output tsteps
-output_interval = 100 # In timesteps
+output_interval = 1000 # In timesteps
 stride = 1 # Prtl downsampling
 #istep = 1 # Flds downsampling

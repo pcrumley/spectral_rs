@@ -61,6 +61,9 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
     prtls.push(Prtl::new(&sim, -1.0, 1.0, 1E-3));
     println!("initialzing flds");
     let mut flds = Flds::new(&sim);
+    let mut x_track = Vec::<f32>::with_capacity((sim.t_final/cfg.output.output_interval) as usize);
+    let mut y_track = Vec::<f32>::with_capacity((sim.t_final/cfg.output.output_interval) as usize);
+
     for t in 0 .. sim.t_final + 1 {
         if cfg.output.write_output {
             if t % cfg.output.output_interval == 0 {
@@ -91,7 +94,13 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
         }
         if cfg.output.track_prtls {
             if t % cfg.output.track_interval == 0 {
-                //
+                for (ix, iy, dx, dy, track) in izip!(&prtls[0].ix, &prtls[0].iy, &prtls[0].dx, &prtls[0].dy, &prtls[0].track){
+                    if *track {
+                        x_track.push(*ix as f32 + *dx);
+                        y_track.push(*iy as f32 + *dy);
+                    }
+                }
+
             }
         }
         // Zero out currents
@@ -117,8 +126,11 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
         // let sim.t = t;
 
     }
-
-
+    if cfg.output.track_prtls {
+        fs::create_dir_all("output/trckd_prtl/")?;
+        npy::to_file("output/trckd_prtl/x.npy", x_track)?;
+        npy::to_file("output/trckd_prtl/y.npy", y_track)?;
+    }
     Ok(())
 }
 
@@ -188,7 +200,7 @@ impl Flds {
             e_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             b_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             b_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            b_z: vec![1.0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_z: vec![1f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)]
@@ -264,15 +276,15 @@ impl Sim {
             // # ----------------------
             // # | w2,0 | w2,1 | w2,2 |
             // # ----------------------
-            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
             w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
             w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
             w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
-            w12 = (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
-            w20 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
-            w21 = 0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
+            w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx); // y0
+            w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
 
             // Deposit the CURRENT
             if cfg!(feature = "unsafe") {
@@ -424,10 +436,10 @@ fn fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: f32, dy: f32, fld: &Vec<f32>) -
         0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx),
         (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx),
         (0.75 - dy * dy) * (0.75 - dx * dx),
-        (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx),
-        0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx),
-        0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx),
-        0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx)
+        (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5 + dx),
+        0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx),
+        0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx),
+        0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx)
     ];
     weights.iter()
         .zip(fld[ijm1 - 1 .. ijm1 + 1].into_iter()
@@ -458,6 +470,7 @@ impl Prtl {
             alpha: alpha,
             beta: beta
         };
+        prtl.track[10]=true;
         prtl.initialize_positions(sim);
         prtl.initialize_velocities(sim);
         prtl.apply_bc(sim);
@@ -466,20 +479,24 @@ impl Prtl {
     fn apply_bc(&mut self, sim: &Sim){
         // PERIODIC BOUNDARIES IN Y
         // First iterate over y array and apply BC
-        for iy in self.iy.iter_mut() {
+        for (iy, dy) in self.iy.iter_mut().zip(self.dy.iter_mut()) {
             if *iy < 1 {
                 *iy += sim.size_y;
+                //*dy = 1f32 - *dy;
             } else if *iy > sim.size_y {
                 *iy -= sim.size_y;
+                //*dy = 1f32 + *dy;
             }
         }
 
         // Now iterate over x array
-        for ix in self.ix.iter_mut() {
+        for (ix, dx) in self.ix.iter_mut().zip(self.dx.iter_mut()) {
             if *ix < 1 {
                 *ix += sim.size_x;
+                //*dx = 1f32 - *dx;
             } else if *ix > sim.size_x {
                 *ix -= sim.size_x;
+                //*dx = 1f32 + *dx;
             }
         }
         // x boundary conditions are incorrect
@@ -594,10 +611,10 @@ impl Prtl {
             w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
             w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
             w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
-            w12 = (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
-            w20 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
-            w21 = 0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
+            w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
+            w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
+            w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx); // y0
+            w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
 
             // INTERPOLATE ALL THE FIELDS
             if cfg!(feature = "unsafe") {
