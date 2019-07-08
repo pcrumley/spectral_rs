@@ -13,6 +13,9 @@ itertools = "0.8.0"
 toml = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 #ndarray = "0.12.1"
+#hdf5 = "0.5.1"
+npy = "0.4"
+npy-derive = "0.4"
 
 [dev-dependencies]
 criterion = "0.2"

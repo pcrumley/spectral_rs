@@ -2,8 +2,8 @@
 t_final = 1001
 
 [params]
-size_x = 3000
-size_y = 256
+size_x = 100
+size_y = 1000
 delta = 0
 dt = 0.1 #
 c = 3.0 # Don't touch this.

@@ -1,10 +1,13 @@
-
 use serde::{Deserialize};
 use std::fs;
 use std::error::Error;
 use rand::prelude::*;
 use rand_distr::StandardNormal;
 use rand_distr::Standard;
+
+#[macro_use]
+extern crate npy_derive;
+extern crate npy;
 
 #[macro_use] extern crate itertools;
 
@@ -24,7 +27,8 @@ pub struct Output {
     pub track_prtls: bool,
     pub write_output: bool,
     pub track_interval: u32,
-    pub output_interval: u32
+    pub output_interval: u32,
+    pub stride: usize,
 }
 
 #[derive(Deserialize)]
@@ -48,20 +52,54 @@ impl Config {
 }
 pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
     //let contents = fs::read_to_string(Sconfig.params.n_pass)?;
-
     let sim = Sim::new(&cfg);
     let mut prtls = Vec::<Prtl>::new();
     // Add ions to prtls list
+    println!("initialzing  prtls");
     prtls.push(Prtl::new(&sim, 1.0, 1.0, 1E-3));
     // Add lecs to prtls list
-    prtls.push(Prtl::new(&sim, 1.0, 1.0, 1E-3));
+    prtls.push(Prtl::new(&sim, -1.0, 1.0, 1E-3));
+    println!("initialzing flds");
     let mut flds = Flds::new(&sim);
     for t in 0 .. sim.t_final + 1 {
+        if cfg.output.write_output {
+            if t % cfg.output.output_interval == 0 {
+                fs::create_dir_all(format!("output/dat_{:04}", t/cfg.output.output_interval))?;
+                println!("saving prtls");
+                let x: Vec::<f32> = prtls[0].ix.iter()
+                        .zip(prtls[0].dx.iter())
+                        .step_by(cfg.output.stride)
+                        .map(|(&ix, &dx)| ix as f32 + dx)
+                        .collect();
+
+                npy::to_file(format!("output/dat_{:04}/x.npy", t/cfg.output.output_interval), x).unwrap();
+                let y: Vec::<f32> = prtls[0].iy.iter()
+                            .zip(prtls[0].dy.iter())
+                            .step_by(cfg.output.stride)
+                            .map(|(&iy, &dy)| iy as f32 + dy)
+                            .collect();
+                npy::to_file(format!("output/dat_{:04}/y.npy", t/cfg.output.output_interval), y).unwrap();
+                npy::to_file(format!("output/dat_{:04}/u.npy", t/cfg.output.output_interval),
+                    prtls[0].px.iter()
+                    .step_by(cfg.output.stride)
+                    .map(|&x| x/sim.c)).unwrap();
+                npy::to_file(format!("output/dat_{:04}/v.npy", t/cfg.output.output_interval),
+                        prtls[0].px.iter()
+                        .step_by(cfg.output.stride)
+                        .map(|&x| x/sim.c)).unwrap();
+            }
+        }
+        if cfg.output.track_prtls {
+            if t % cfg.output.track_interval == 0 {
+                //
+            }
+        }
         // Zero out currents
+        println!("{}", t);
         for (jx, jy, jz) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z) {
             *jx = 0.; *jy = 0.; *jz = 0.;
         }
-
+        println!("moving prtl");
         // deposit currents
         for prtl in prtls.iter_mut(){
             sim.move_and_deposit(prtl, &mut flds);
@@ -71,22 +109,13 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
         // self.fieldSolver()
 
         // push prtls
-
+        println!("pushing prtl");
         for prtl in prtls.iter_mut(){
             prtl.boris_push(&sim, &flds);
         }
 
         // let sim.t = t;
-        if cfg.output.write_output {
-            if t % cfg.output.output_interval == 0 {
-                // WRITE OUTPUT FILES
-            }
-        }
-        if cfg.output.track_prtls {
-            if t % cfg.output.track_interval == 0 {
-                // WRITE TRACKING FILES
-            }
-        }
+
     }
 
 
@@ -159,7 +188,7 @@ impl Flds {
             e_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             b_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             b_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            b_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_z: vec![1.0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)]
@@ -368,7 +397,6 @@ impl Sim {
     }
 }
 
-
 struct Prtl {
     ix: Vec<usize>,
     iy: Vec<usize>,
@@ -386,9 +414,9 @@ struct Prtl {
     track: Vec<bool>
 }
 fn fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: f32, dy: f32, fld: &Vec<f32>) -> f32 {
-    let ijm1 = (iy - 1) * (sim.size_x + 2);
-    let ij = iy * (sim.size_x + 2);
-    let ijp1 = (iy + 1) * (sim.size_x + 2);
+    let ijm1 = (iy - 1) * (sim.size_x + 2) + ix;
+    let ij = iy * (sim.size_x + 2) + ix;
+    let ijp1 = (iy + 1) * (sim.size_x + 2) + ix;
 
     let weights = [
         0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx),
@@ -412,8 +440,8 @@ fn fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: f32, dy: f32, fld: &Vec<f32>) -
 
 impl Prtl {
     fn new (sim: &Sim, charge: f32, mass: f32, vth: f32) -> Prtl {
-        let beta = charge * 0.5 * mass * sim.dt;
-        let alpha = charge * 0.5 * mass * sim.dt / sim.c;
+        let beta = (charge / mass) * 0.5 * sim.dt;
+        let alpha = (charge / mass) * 0.5 * sim.dt / sim.c;
         let mut prtl = Prtl {
             ix: vec![0; sim.prtl_num],
             dx: vec![0f32; sim.prtl_num],
@@ -445,17 +473,25 @@ impl Prtl {
                 *iy -= sim.size_y;
             }
         }
+
         // Now iterate over x array
+        for ix in self.ix.iter_mut() {
+            if *ix < 1 {
+                *ix += sim.size_x;
+            } else if *ix > sim.size_x {
+                *ix -= sim.size_x;
+            }
+        }
         // x boundary conditions are incorrect
-        let c1 = sim.size_x - sim.delta;
-        let c2 = 2 * c1;
+        //let c1 = sim.size_x - sim.delta;
+        //let c2 = 2 * c1;
         // Let len = std::cmp::min(xs.len(), pxs.len());
-        for (ix, px) in self.ix.iter_mut().zip(self.px.iter_mut()) {
-             if *ix >= c1 {
-                 *ix = c2 - *ix;
-                 *px *= -1.0;
-             }
-         }
+        //for (ix, px) in self.ix.iter_mut().zip(self.px.iter_mut()) {
+        //     if *ix >= c1 {
+        //         *ix = c2 - *ix;
+        //         *px *= -1.0;
+        //     }
+        //}
     }
     fn initialize_positions(&mut self, sim: &Sim) {
         // A method to calculate the initial, non-random
