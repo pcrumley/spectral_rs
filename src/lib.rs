@@ -96,8 +96,8 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
             if t % cfg.output.track_interval == 0 {
                 for (ix, iy, dx, dy, track) in izip!(&prtls[0].ix, &prtls[0].iy, &prtls[0].dx, &prtls[0].dy, &prtls[0].track){
                     if *track {
-                        x_track.push(*ix as f32 + *dx);
-                        y_track.push(*iy as f32 + *dy);
+                        x_track.push((*ix as f32 + *dx)/sim.c);
+                        y_track.push((*iy as f32 + *dy)/sim.c);
                     }
                 }
 
@@ -105,8 +105,8 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
         }
         // Zero out currents
         println!("{}", t);
-        for (jx, jy, jz) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z) {
-            *jx = 0.; *jy = 0.; *jz = 0.;
+        for (jx, jy, jz, dsty) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty) {
+            *jx = 0.; *jy = 0.; *jz = 0.; *dsty =0.;
         }
         println!("moving prtl");
         // deposit currents
@@ -121,6 +121,11 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
         println!("pushing prtl");
         for prtl in prtls.iter_mut(){
             prtl.boris_push(&sim, &flds);
+        }
+
+        //calc Density
+        for prtl in prtls.iter_mut(){
+            sim.calc_density(prtl, &mut flds);
         }
 
         // let sim.t = t;
@@ -191,6 +196,7 @@ struct Flds {
     j_x: Vec<f32>,
     j_y: Vec<f32>,
     j_z: Vec<f32>,
+    dsty: Vec<f32>
 }
 impl Flds {
     fn new(sim: &Sim) ->  Flds {
@@ -203,7 +209,8 @@ impl Flds {
             b_z: vec![1f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            j_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)]
+            j_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            dsty: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
         }
     }
 }
@@ -352,6 +359,74 @@ impl Sim {
             }
         }
     }
+
+        fn calc_density (&self, prtl: &Prtl, flds: &mut Flds) {
+            // local vars we will use
+            let mut ij: usize; let mut ijm1: usize; let mut ijp1: usize;
+
+            // for the weights
+            let mut w00: f32; let mut w01: f32; let mut w02: f32;
+            let mut w10: f32; let mut w11: f32; let mut w12: f32;
+            let mut w20: f32; let mut w21: f32; let mut w22: f32;
+
+
+            for (ix, iy, dx, dy, px, py, pz, psa) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy, &prtl.px, &prtl.py, &prtl.pz, &prtl.psa) {
+                ijm1 = iy - 1;
+                ijp1 = iy + 1;
+                //if ix1 >= *SIZE_X {
+                //    ix1 -= *SIZE_X;
+                //    ix2 -= *SIZE_X;
+                //} else if ix2 >= *SIZE_X {
+                //    ix2 -= *SIZE_X;
+                //}
+                ij = iy *  (2 + self.size_x); ijm1 *= 2 + self.size_x; ijp1 *= 2 + self.size_x;
+
+                // CALC WEIGHTS
+                // 2nd order
+                // The weighting scheme prtl is in middle
+                // # ----------------------
+                // # | w0,0 | w0,1 | w0,2 |
+                // # ----------------------
+                // # | w1,0 | w1,1 | w1,2 |
+                // # ----------------------
+                // # | w2,0 | w2,1 | w2,2 |
+                // # ----------------------
+                w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
+                w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
+                w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
+                w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+                w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
+                w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+                w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
+                w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx); // y0
+                w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
+
+                // Deposit the CURRENT
+                if cfg!(feature = "unsafe") {
+                    unsafe {
+                        *flds.dsty.get_unchecked_mut(ijm1 + ix -1) += w00 * prtl.charge;
+                        *flds.dsty.get_unchecked_mut(ijm1 + ix) += w01 * prtl.charge;
+                        *flds.dsty.get_unchecked_mut(ijm1 + ix + 1) += w02 * prtl.charge;
+                        *flds.dsty.get_unchecked_mut(ij + ix - 1) += w10 * prtl.charge;
+                        *flds.dsty.get_unchecked_mut(ij + ix) += w11 * prtl.charge;
+                        *flds.dsty.get_unchecked_mut(ij + ix + 1) += w12 * prtl.charge;
+                        *flds.dsty.get_unchecked_mut(ijp1 + ix - 1) += w20 * prtl.charge;
+                        *flds.dsty.get_unchecked_mut(ijp1 + ix) += w21 * prtl.charge;
+                        *flds.dsty.get_unchecked_mut(ijp1 + ix + 1) += w22 * prtl.charge;
+                    }
+                } else {
+                    flds.dsty[ijm1 + ix -1] += w00 * prtl.charge;
+                    flds.dsty[ijm1 + ix] += w01 * prtl.charge;
+                    flds.dsty[ijm1 + ix + 1] += w02 * prtl.charge;
+                    flds.dsty[ij + ix - 1] += w10 * prtl.charge;
+                    flds.dsty[ij + ix] += w11 * prtl.charge;
+                    flds.dsty[ij + ix + 1] += w12 * prtl.charge;
+                    flds.dsty[ijp1 + ix - 1] += w20 * prtl.charge;
+                    flds.dsty[ijp1 + ix] += w21 * prtl.charge;
+                    flds.dsty[ijp1 + ix + 1] += w22 * prtl.charge;
+                }
+            }
+        }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
         let mut c1: f32;
