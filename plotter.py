@@ -2,9 +2,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 x= np.load('output/trckd_prtl/x.npy')
 y= np.load('output/trckd_prtl/y.npy')
+gam= np.load('output/trckd_prtl/psa.npy')
 
-plt.plot(x,y)
+plt.plot(x)
 plt.show()
 
-plt.plot(np.sqrt((x[:-1]-x[1:])**2+(y[1:]-y[:-1])**2), '.')
+plt.plot(gam)
 plt.show()
+
+x0= np.load('output/dat_0000/gam.npy')
+print(x0)
+x1 = np.load('output/dat_0001/gam.npy')
+print(x1)
+print(x1-x0)

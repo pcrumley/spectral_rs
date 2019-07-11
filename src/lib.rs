@@ -4,6 +4,11 @@ use std::error::Error;
 use rand::prelude::*;
 use rand_distr::StandardNormal;
 use rand_distr::Standard;
+const PI:f32 = std::f32::consts::PI;
+use std::sync::Arc;
+use rustfft::FFTplanner;
+use rustfft::num_complex::Complex;
+use rustfft::num_traits::Zero;
 
 #[macro_use]
 extern crate npy_derive;
@@ -59,11 +64,11 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
     prtls.push(Prtl::new(&sim, 1.0, 1.0, 1E-3));
     // Add lecs to prtls list
     prtls.push(Prtl::new(&sim, -1.0, 1.0, 1E-3));
-    println!("initialzing flds");
+
     let mut flds = Flds::new(&sim);
     let mut x_track = Vec::<f32>::with_capacity((sim.t_final/cfg.output.output_interval) as usize);
     let mut y_track = Vec::<f32>::with_capacity((sim.t_final/cfg.output.output_interval) as usize);
-
+    let mut gam_track = Vec::<f32>::with_capacity((sim.t_final/cfg.output.output_interval) as usize);
     for t in 0 .. sim.t_final + 1 {
         if cfg.output.write_output {
             if t % cfg.output.output_interval == 0 {
@@ -83,21 +88,21 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
                             .collect();
                 npy::to_file(format!("output/dat_{:04}/y.npy", t/cfg.output.output_interval), y).unwrap();
                 npy::to_file(format!("output/dat_{:04}/u.npy", t/cfg.output.output_interval),
-                    prtls[0].px.iter()
+                    prtls[0].px.clone().iter()
                     .step_by(cfg.output.stride)
                     .map(|&x| x/sim.c)).unwrap();
-                npy::to_file(format!("output/dat_{:04}/v.npy", t/cfg.output.output_interval),
-                        prtls[0].px.iter()
-                        .step_by(cfg.output.stride)
-                        .map(|&x| x/sim.c)).unwrap();
+                npy::to_file(format!("output/dat_{:04}/gam.npy", t/cfg.output.output_interval),
+                        prtls[0].psa.clone()).unwrap();
             }
         }
         if cfg.output.track_prtls {
             if t % cfg.output.track_interval == 0 {
-                for (ix, iy, dx, dy, track) in izip!(&prtls[0].ix, &prtls[0].iy, &prtls[0].dx, &prtls[0].dy, &prtls[0].track){
+                for (ix, iy, dx, dy, track, psa) in izip!(&prtls[0].ix, &prtls[0].iy, &prtls[0].dx, &prtls[0].dy, &prtls[0].track, &prtls[0].psa){
                     if *track {
+
                         x_track.push((*ix as f32 + *dx)/sim.c);
                         y_track.push((*iy as f32 + *dy)/sim.c);
+                        gam_track.push(*psa);
                     }
                 }
 
@@ -108,14 +113,15 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
         for (jx, jy, jz, dsty) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty) {
             *jx = 0.; *jy = 0.; *jz = 0.; *dsty =0.;
         }
-        println!("moving prtl");
+        println!("moving & dep prtl");
         // deposit currents
         for prtl in prtls.iter_mut(){
             sim.move_and_deposit(prtl, &mut flds);
         }
 
         // solve field
-        // self.fieldSolver()
+        println!("solving fields");
+        flds.update(&sim);
 
         // push prtls
         println!("pushing prtl");
@@ -135,9 +141,11 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
         fs::create_dir_all("output/trckd_prtl/")?;
         npy::to_file("output/trckd_prtl/x.npy", x_track)?;
         npy::to_file("output/trckd_prtl/y.npy", y_track)?;
+        npy::to_file("output/trckd_prtl/psa.npy", gam_track)?;
     }
     Ok(())
 }
+
 
 fn binomial_filter_2_d(sim: &Sim,in_vec: &mut Vec::<f32>, wrkspace: &mut Vec::<f32>) {
     // wrkspace should be same size as fld
@@ -145,7 +153,7 @@ fn binomial_filter_2_d(sim: &Sim,in_vec: &mut Vec::<f32>, wrkspace: &mut Vec::<f
     // account for ghost zones
     // FIRST FILTER IN X-DIRECTION
     for _ in 0 .. sim.n_pass {
-        for i in (1 .. (sim.size_y + 1)*(sim.size_x + 2)).step_by(sim.size_x+ 2) {
+        for i in ((sim.size_x + 2) .. (sim.size_y + 1)*(sim.size_x + 2)).step_by(sim.size_x+ 2) {
             for j in 1 .. sim.size_x + 1 {
                 wrkspace[i] = weights.iter()
                                 .zip(&in_vec[i + j - 1 .. i + j + 1])
@@ -165,7 +173,7 @@ fn binomial_filter_2_d(sim: &Sim,in_vec: &mut Vec::<f32>, wrkspace: &mut Vec::<f
             wrkspace[(sim.size_y + 1) * sim.size_x  + j] = wrkspace[sim.size_x  + j];
         }
         // NOW FILTER IN Y-DIRECTION AND PUT VALS IN in_vec
-        for i in (1 .. (sim.size_y + 1)*(sim.size_x + 2)).step_by(sim.size_x + 2) {
+        for i in ((sim.size_x + 2) .. (sim.size_y + 1)*(sim.size_x + 2)).step_by(sim.size_x + 2) {
             for j in 1 .. sim.size_x + 1 {
                 in_vec[i] = weights.iter()
                                 .zip(wrkspace[i + j - (sim.size_x + 2) .. i + j + (sim.size_x + 2)].iter().step_by(sim.size_x + 2))
@@ -196,22 +204,166 @@ struct Flds {
     j_x: Vec<f32>,
     j_y: Vec<f32>,
     j_z: Vec<f32>,
+    k_x: Vec<f32>,
+    k_y: Vec<f32>,
+    k_norm: Vec<f32>,
+    fft_x: std::sync::Arc<dyn rustfft::FFT<f32>>,
+    ifft_x: std::sync::Arc<dyn rustfft::FFT<f32>>,
+    fft_y: std::sync::Arc<dyn rustfft::FFT<f32>>,
+    ifft_y: std::sync::Arc<dyn rustfft::FFT<f32>>,
+    real_wrkspace_ghosts: Vec<f32>,
+    real_wrkspace: Vec<f32>,
+    cmp_wrkspace: Vec<Complex<f32>>,
+    c_x: Vec<Complex<f32>>,
+    c_y: Vec<Complex<f32>>,
+    c_z: Vec<Complex<f32>>,
+    dsty_cmp: Vec<Complex<f32>>,
     dsty: Vec<f32>
 }
 impl Flds {
     fn new(sim: &Sim) ->  Flds {
-        Flds {
+        //let Bnorm = 0f32;
+        let mut planner = FFTplanner::new(false);
+        //let () = planner;
+        let mut inv_planner = FFTplanner::new(true);
+        //let mut input:  Vec<Complex<f32>> = vec![Complex::zero(); sim.size_x];
+        //let mut output: Vec<Complex<f32>> = vec![Complex::zero();  sim.size_x];
+
+
+        let fft_x = planner.plan_fft(sim.size_x);
+        let ifft_x = inv_planner.plan_fft(sim.size_x);
+        let fft_y = planner.plan_fft(sim.size_y);
+        let ifft_y = planner.plan_fft(sim.size_y);
+        let mut input:  Vec<Complex<f32>> = vec![Complex::zero(); sim.size_x];
+        let mut output: Vec<Complex<f32>> = vec![Complex::zero(); sim.size_x];
+        //let ifft_x = inv_planner.plan_fft(sim.size_x);
+        //let fft_y = planner.plan_fft(sim.size_y);
+        //let ifft_y = inv_planner.plan_fft(sim.size_y);
+        fft_x.process(&mut input, &mut output);
+
+        let mut f = Flds {
             e_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)], // 2 Ghost zones. 1 at 0, 1 at SIZE_X
             e_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             e_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             b_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             b_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            b_z: vec![1f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             j_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            k_x: vec![0f32; sim.size_x],
+            k_y: vec![0f32; sim.size_y],
+            k_norm: vec![0f32; sim.size_y * sim.size_x],
+            fft_x: fft_x,
+            ifft_x: ifft_x,
+            fft_y: fft_y,
+            ifft_y: ifft_y,
+            real_wrkspace_ghosts: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            real_wrkspace: vec![0f32; (sim.size_y) * (sim.size_x)],
+            cmp_wrkspace: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            c_x: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            c_y: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            c_z: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             dsty: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            dsty_cmp: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+        };
+        // Build the k basis of FFT
+        for i in 0 .. f.k_x.len() {
+            f.k_x[i] = i as f32;
+            if i > sim.size_x/2 +1 {
+                f.k_x[i] -= sim.size_x as f32;
+            }
+            f.k_x[i] *= 2f32 * PI / (sim.size_x as f32);
         }
+        for i in 0 .. f.k_y.len() {
+            f.k_y[i] = i as f32;
+            if i > sim.size_y/2 +1 {
+                f.k_y[i] -= sim.size_y as f32;
+            }
+            f.k_y[i] *= 2f32 * PI / (sim.size_y as f32);
+        }
+        // Make the norm:
+        for i in 0 .. f.k_y.len() {
+            for j in 0 .. f.k_x.len() {
+                f.k_norm[i*sim.size_x + j] = 1./(f.k_x[j] * f.k_x[j] + f.k_y[i] * f.k_y[i]);
+            }
+        }
+
+        if false {
+            for i in 0 .. (sim.size_y + 2) {
+                //let tmp_b = 2f32 * Bnorm * (sim.size_y/2 - (i - 1))/(sim.size_y as f32);
+                let tmp_b = 0f32;
+                for j in 0.. (sim.size_x + 2) {
+
+                    if i > (sim.size_y)/6  && i < 2 * sim.size_y/6 {
+
+                        f.e_y[i*(sim.size_x+2)+j] = -0.9 * tmp_b;
+                        f.b_z[i*(sim.size_x+2)+j] = tmp_b;
+                    }
+                    if i > 2*(sim.size_y)/3  && i < 5 * sim.size_y/6 {
+                        f.e_y[i*(sim.size_x+2)+j] = 0.9 * tmp_b;
+                        f.b_z[i*(sim.size_x+2)+j] = -tmp_b;
+                    }
+                }
+            }
+        }
+        f
+    }
+    pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<f32>>, out_fld: &mut Vec<Complex<f32>>) {
+        for i in 0..sim.size_y {
+            for j in 0..sim.size_x {
+                if cfg!(feature = "unsafe") {
+                    unsafe {
+                        *out_fld.get_unchecked_mut(i*sim.size_x+j) = *in_fld.get_unchecked(j*sim.size_y+i);
+                    }
+                } else {
+                    out_fld[i*sim.size_x+j] = in_fld[j*sim.size_y+i];
+                }
+            }
+        }
+    }
+    pub fn fft2d(fft_x: std::sync::Arc<dyn rustfft::FFT<f32>>, fft_y: std::sync::Arc<dyn rustfft::FFT<f32>>, sim: &Sim, fld: &mut Vec<Complex<f32>>, wrk_space: &mut Vec<Complex<f32>>) {
+        for iy in (0 .. sim.size_y*sim.size_x).step_by(sim.size_x) {
+            fft_x.process(&mut fld[iy..iy + sim.size_x], &mut wrk_space[iy..iy + sim.size_x]);
+        }
+        Flds::transpose(sim, wrk_space, fld);
+        for iy in (0 .. sim.size_x*sim.size_y).step_by(sim.size_y) {
+            fft_y.process(&mut fld[iy..iy + sim.size_y], &mut wrk_space[iy..iy +sim.size_y]);
+        }
+        Flds::transpose(sim, wrk_space, fld);
+
+    }
+    pub fn update(&mut self, sim: &Sim) {
+        let ckc = sim.dt / sim.dens as f32;
+        let cdt = sim.dt * sim.c as f32;
+        // Filter fields
+        binomial_filter_2_d(sim, &mut self.j_x, &mut self.real_wrkspace_ghosts);
+        binomial_filter_2_d(sim, &mut self.j_y, &mut self.real_wrkspace_ghosts);
+        binomial_filter_2_d(sim, &mut self.j_z, &mut self.real_wrkspace_ghosts);
+        binomial_filter_2_d(sim, &mut self.dsty, &mut self.real_wrkspace_ghosts);
+        // copy j_x, j_y, j_z, dsty into complex vector
+        let mut ij: usize; let mut ij_ghosts: usize;
+        for iy in 0 .. sim.size_y {
+            ij = iy * (sim.size_x);
+            ij_ghosts = (iy + 1) * (sim.size_x + 2);
+            for ix in 0 .. sim.size_x {
+                self.c_x[ij+ix].re = self.j_x[ij_ghosts + ix + 1];
+                self.c_x[ij+ix].im = 0.0;
+                self.c_y[ij+ix].re = self.j_y[ij_ghosts + ix + 1];
+                self.c_y[ij+ix].im = 0.0;
+                self.c_z[ij+ix].re = self.j_z[ij_ghosts + ix + 1];
+                self.c_z[ij+ix].im = 0.0;
+                self.dsty_cmp[ij+ix].re = self.dsty[ij_ghosts + ix + 1]/(sim.dens as f32);
+                self.dsty_cmp[ij+ix].im = 0.0;
+            }
+        }
+        // Take fft of currents
+        Flds::fft2d(self.fft_x.clone(), self.fft_y.clone(), sim, &mut self.c_x, &mut self.cmp_wrkspace);
+        Flds::fft2d(self.fft_x.clone(), self.fft_y.clone(), sim, &mut self.c_y, &mut self.cmp_wrkspace);
+        Flds::fft2d(self.fft_x.clone(), self.fft_y.clone(), sim, &mut self.c_z, &mut self.cmp_wrkspace);
+        Flds::fft2d(self.fft_x.clone(), self.fft_y.clone(), sim, &mut self.dsty_cmp, &mut self.cmp_wrkspace);
+
+
     }
 }
 struct Sim {
@@ -243,6 +395,7 @@ impl Sim {
             dens: cfg.params.dens,
             gamma_inj: cfg.params.gamma_inj, // Speed of upstream flow
             prtl_num: cfg.params.dens as usize * (cfg.params.size_x - 2 * cfg.params.delta) * cfg.params.size_y,
+            //prtl_num: 100,
             n_pass: cfg.params.n_pass
         }
     }
@@ -269,7 +422,7 @@ impl Sim {
             //    ix2 -= *SIZE_X;
             //}
             ij = iy *  (2 + self.size_x); ijm1 *= 2 + self.size_x; ijp1 *= 2 + self.size_x;
-            psa_inv = psa.powf(-1.0);
+            psa_inv = psa.powi(-1);
             vx = prtl.charge * px * psa_inv;
             vy = prtl.charge * py * psa_inv;
             vz = prtl.charge * pz * psa_inv;
@@ -370,7 +523,7 @@ impl Sim {
             let mut w20: f32; let mut w21: f32; let mut w22: f32;
 
 
-            for (ix, iy, dx, dy, px, py, pz, psa) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy, &prtl.px, &prtl.py, &prtl.pz, &prtl.psa) {
+            for (ix, iy, dx, dy) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy) {
                 ijm1 = iy - 1;
                 ijp1 = iy + 1;
                 //if ix1 >= *SIZE_X {
@@ -545,7 +698,7 @@ impl Prtl {
             alpha: alpha,
             beta: beta
         };
-        prtl.track[10]=true;
+        prtl.track[40]=true;
         prtl.initialize_positions(sim);
         prtl.initialize_velocities(sim);
         prtl.apply_bc(sim);
@@ -554,30 +707,27 @@ impl Prtl {
     fn apply_bc(&mut self, sim: &Sim){
         // PERIODIC BOUNDARIES IN Y
         // First iterate over y array and apply BC
-        for (iy, dy) in self.iy.iter_mut().zip(self.dy.iter_mut()) {
+        for iy in self.iy.iter_mut() {
             if *iy < 1 {
                 *iy += sim.size_y;
-                //*dy = 1f32 - *dy;
             } else if *iy > sim.size_y {
                 *iy -= sim.size_y;
-                //*dy = 1f32 + *dy;
             }
         }
 
         // Now iterate over x array
-        for (ix, dx) in self.ix.iter_mut().zip(self.dx.iter_mut()) {
+        for ix in self.ix.iter_mut() {
             if *ix < 1 {
                 *ix += sim.size_x;
-                //*dx = 1f32 - *dx;
             } else if *ix > sim.size_x {
                 *ix -= sim.size_x;
-                //*dx = 1f32 + *dx;
             }
         }
+
         // x boundary conditions are incorrect
-        //let c1 = sim.size_x - sim.delta;
-        //let c2 = 2 * c1;
-        // Let len = std::cmp::min(xs.len(), pxs.len());
+        // let c1 = sim.size_x - sim.delta;
+        // let c2 = 2 * c1;
+
         //for (ix, px) in self.ix.iter_mut().zip(self.px.iter_mut()) {
         //     if *ix >= c1 {
         //         *ix = c2 - *ix;
@@ -590,6 +740,7 @@ impl Prtl {
         // position of the particles
         let mut c1 = 0;
         // let mut rng = thread_rng();
+        if true {
         for i in 0 .. sim.size_y {
             for j in sim.delta .. sim.size_x - sim.delta {
                 for k in 0 .. sim.dens as usize {
@@ -615,6 +766,14 @@ impl Prtl {
             }
 
         }
+        } else {
+            for i in 0 .. self.iy.len() {
+                self.iy[i] = 1 + i * ((sim.size_y as f32 ) / (self.iy.len() as f32)) as usize;
+                self.ix[i] = sim.size_x - 4;
+                self.dx[i] = 0.0;
+                self.dy[i] = 0.0;
+            }
+        }
         //    for j in range(delta, Lx-delta):
         //#for i in range(Ly//2, Ly//2+10):
         //    for j in range(delta, delta+10):
@@ -624,32 +783,42 @@ impl Prtl {
     }
     fn initialize_velocities(&mut self, sim: &Sim) {
         //placeholder
-        let mut rng = thread_rng();
-        let beta_inj = f32::sqrt(1.-sim.gamma_inj.powi(-2));
         let csqinv = 1./(sim.c * sim.c);
-        for (px, py, pz, psa) in izip!(&mut self.px, &mut self.py, &mut self.pz, &mut self.psa)
-             {
-            *px = rng.sample(StandardNormal);
-            *px *= self.vth * sim.c;
-            *py = rng.sample(StandardNormal);
-            *py *= self.vth * sim.c;
-            *pz = rng.sample(StandardNormal);
-            *pz *= self.vth * sim.c;
-            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv;
-            *psa = psa.sqrt();
+        let beta_inj = -f32::sqrt(1.-sim.gamma_inj.powi(-2));
+        // println!("{}", beta_inj);
+        if true {
+            let mut rng = thread_rng();
 
-            // Flip the px according to zenitani 2015
-            let mut ux = *px / sim.c;
-            let rand: f32 = rng.sample(Standard);
-            if - beta_inj * ux > rand * *psa {
-                ux *= -1.
+
+            for (px, py, pz, psa) in izip!(&mut self.px, &mut self.py, &mut self.pz, &mut self.psa)
+                 {
+                *px = rng.sample(StandardNormal);
+                *px *= self.vth * sim.c;
+                *py = rng.sample(StandardNormal);
+                *py *= self.vth * sim.c;
+                *pz = rng.sample(StandardNormal);
+                *pz *= self.vth * sim.c;
+                *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv;
+                *psa = psa.sqrt();
+
+                // Flip the px according to zenitani 2015
+                let mut ux = *px / sim.c;
+                let rand: f32 = rng.sample(Standard);
+                if - beta_inj * ux > rand * *psa {
+                    ux *= -1.
+                }
+                *px = sim.gamma_inj * (ux + beta_inj * *psa); // not p yet... really ux-prime
+                *px *= sim.c;
+                *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv;
+                *psa = psa.sqrt();
             }
-            *px = sim.gamma_inj * (ux + beta_inj * *psa); // not p yet... really ux-prime
-            *px *= sim.c;
-            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv;
-            *psa = psa.sqrt();
+        } else {
+            for (px, psa) in izip!(&mut self.px, &mut self.psa) {
+                *px = -sim.c*sim.gamma_inj*beta_inj;
+                *psa = 1.0 + (*px * *px) * csqinv;
+                *psa = psa.sqrt();
+            }
         }
-
     }
     fn boris_push(&mut self, sim: &Sim, flds: &Flds) {
         // local vars we will use
@@ -822,8 +991,7 @@ impl Prtl {
             ux = *px + ext;
             uy = *py + eyt;
             uz = *pz + ezt;
-            pt = ux * ux + uy * uy + uz * uz;
-            gt = (1. + pt * csqinv).sqrt().powi(-1);
+            gt = (1. + (ux * ux + uy * uy + uz * uz) * csqinv).sqrt().powi(-1);
 
             bxt *= gt;
             byt *= gt;

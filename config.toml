@@ -2,13 +2,13 @@
 t_final = 1000
 
 [params]
-size_x = 256
+size_x = 2048
 size_y = 256
-delta = 0
+delta = 64
 dt = 0.1 # In units 1/omega_pe
 c = 3.0 # This is really c/omega_pe. Don't touch this.
-dens = 1 # of prtls per species per cell
-gamma_inj = 150.0 # Speed of upstream flow
+dens = 2   # of prtls per species per cell
+gamma_inj = 10.0 # Speed of upstream flow
 n_pass = 4 # Number of filter passes.
 
 [output]
