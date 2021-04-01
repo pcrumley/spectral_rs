@@ -5,11 +5,13 @@ use criterion::Criterion;
 //use criterion::black_box;
 //use rayon::prelude::*;
 use rand::prelude::*;
-use rand_distr::StandardNormal;
 use rand_distr::Standard;
+use rand_distr::StandardNormal;
 //use ndarray::prelude::*;
-#[macro_use] extern crate itertools;
-#[macro_use] extern crate lazy_static;
+#[macro_use]
+extern crate itertools;
+#[macro_use]
+extern crate lazy_static;
 //#[macro_use(array)] extern crate ndarray;
 
 lazy_static! {
@@ -26,21 +28,21 @@ lazy_static! {
 }
 
 struct Sim {
-    e_x: Vec::<f32>,
-    e_y: Vec::<f32>,
-    e_z: Vec::<f32>,
-    b_x: Vec::<f32>,
-    b_y: Vec::<f32>,
-    b_z: Vec::<f32>,
-    j_x: Vec::<f32>,
-    j_y: Vec::<f32>,
-    j_z: Vec::<f32>,
+    e_x: Vec<f32>,
+    e_y: Vec<f32>,
+    e_z: Vec<f32>,
+    b_x: Vec<f32>,
+    b_y: Vec<f32>,
+    b_z: Vec<f32>,
+    j_x: Vec<f32>,
+    j_y: Vec<f32>,
+    j_z: Vec<f32>,
     prtls: Vec<Prtl>,
     t: u32,
 }
 
 impl Sim {
-    fn add_species (&mut self, charge: f32, mass: f32, vth: f32) {
+    fn add_species(&mut self, charge: f32, mass: f32, vth: f32) {
         let beta = charge * 0.5 * mass * *DT;
         let alpha = charge * 0.5 * mass * *DT / *C;
         let mut prtl = Prtl {
@@ -56,7 +58,7 @@ impl Sim {
             // mass: mass,
             vth: vth,
             alpha: alpha,
-            beta: beta
+            beta: beta,
         };
         prtl.initialize_positions();
         prtl.initialize_velocities();
@@ -64,27 +66,29 @@ impl Sim {
 
         self.prtls.push(prtl);
     }
-    fn run (&mut self) {
+    fn run(&mut self) {
         for _ in 0..10 {
             // Zero out currents
             for (jx, jy, jz) in izip!(&mut self.j_x, &mut self.j_y, &mut self.j_z) {
-                *jx = 0.; *jy = 0.; *jz = 0.;
+                *jx = 0.;
+                *jy = 0.;
+                *jz = 0.;
             }
 
             // deposit currents
-            for prtl in self.prtls.iter_mut(){
+            for prtl in self.prtls.iter_mut() {
                 prtl.move_and_deposit(&mut self.j_x, &mut self.j_y, &mut self.j_z);
             }
-
 
             // solve field
             // self.fieldSolver()
 
             // push prtls
 
-            for prtl in self.prtls.iter_mut(){
-                prtl.boris_push(&self.e_x, &self.e_y, &self.e_z,
-                    &self.b_x, &self.b_y, &self.b_z);
+            for prtl in self.prtls.iter_mut() {
+                prtl.boris_push(
+                    &self.e_x, &self.e_y, &self.e_z, &self.b_x, &self.b_y, &self.b_z,
+                );
             }
 
             self.t += 1
@@ -93,18 +97,18 @@ impl Sim {
 }
 fn new_sim() -> Sim {
     let sim = Sim {
-            e_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)], // 3 Ghost zones. 1 at 0, 2 at SIZE_X
-            e_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            e_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            b_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            b_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            b_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            j_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            j_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            j_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
-            prtls: Vec::<Prtl>::new(),
-            t: 0,
-        };
+        e_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)], // 3 Ghost zones. 1 at 0, 2 at SIZE_X
+        e_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
+        e_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
+        b_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
+        b_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
+        b_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
+        j_x: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
+        j_y: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
+        j_z: vec![0f32; (*SIZE_Y + 2) * (2 + *SIZE_X)],
+        prtls: Vec::<Prtl>::new(),
+        t: 0,
+    };
     sim
 }
 struct Prtl {
@@ -123,7 +127,7 @@ struct Prtl {
 }
 
 impl Prtl {
-    fn apply_bc(&mut self){
+    fn apply_bc(&mut self) {
         // PERIODIC BOUNDARIES IN Y
         // First iterate over y array and apply BC
         for iy in self.iy.iter_mut() {
@@ -138,20 +142,20 @@ impl Prtl {
         let c2 = 2 * c1;
         // Let len = std::cmp::min(xs.len(), pxs.len());
         for (ix, px) in self.ix.iter_mut().zip(self.px.iter_mut()) {
-             if *ix >= c1 {
-                 *ix = c2 - *ix;
-                 *px *= -1.0;
-             }
-         }
+            if *ix >= c1 {
+                *ix = c2 - *ix;
+                *px *= -1.0;
+            }
+        }
     }
     fn initialize_positions(&mut self) {
         // A method to calculate the initial, non-random
         // position of the particles
         let mut c1 = 0;
         // let mut rng = thread_rng();
-        for i in 0 .. *SIZE_Y {
-            for j in *DELTA .. *SIZE_X - *DELTA {
-                for k in 0 .. *DENS {
+        for i in 0..*SIZE_Y {
+            for j in *DELTA..*SIZE_X - *DELTA {
+                for k in 0..*DENS {
                     // RANDOM OPT
                     // let r1: f32 = rng.sample(Standard);
                     // let r2: f32 = rng.sample(Standard);
@@ -159,17 +163,14 @@ impl Prtl {
                     // self.y[c1+k]= r2 + (i as f32);
 
                     // UNIFORM OPT
-                    let mut r1 = 1.0/(2.0 * (*DENS as f32));
-                    r1 = (2.*(k as f32) +1.) * r1;
-                    self.dx[c1+k]= r1 + (j as f32);
-                    self.dy[c1+k]= r1 + (i as f32);
-
-
+                    let mut r1 = 1.0 / (2.0 * (*DENS as f32));
+                    r1 = (2. * (k as f32) + 1.) * r1;
+                    self.dx[c1 + k] = r1 + (j as f32);
+                    self.dy[c1 + k] = r1 + (i as f32);
                 }
                 c1 += *DENS;
                 // helper_arr = -.5+0.25+np.arange(dens)*.5
             }
-
         }
         //    for j in range(delta, Lx-delta):
         //#for i in range(Ly//2, Ly//2+10):
@@ -181,8 +182,7 @@ impl Prtl {
     fn initialize_velocities(&mut self) {
         //placeholder
         let mut rng = thread_rng();
-        for (px, py, pz, psa) in izip!(&mut self.px, &mut self.py, &mut self.pz, &mut self.psa)
-             {
+        for (px, py, pz, psa) in izip!(&mut self.px, &mut self.py, &mut self.pz, &mut self.psa) {
             *px = rng.sample(StandardNormal);
             *px *= self.vth * *C;
             *py = rng.sample(StandardNormal);
@@ -195,36 +195,71 @@ impl Prtl {
             // Flip the px according to zenitani 2015
             let mut ux = *px / *C;
             let rand: f32 = rng.sample(Standard);
-            if - *BETA_INJ * ux > rand * *psa {
+            if -*BETA_INJ * ux > rand * *psa {
                 ux *= -1.
             }
             *px = *GAMMA_INJ * (ux + *BETA_INJ * *psa); // not p yet... really ux-prime
             *px *= *C;
-            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz)/(*C * *C);
+            *psa = 1.0 + (*px * *px + *py * *py + *pz * *pz) / (*C * *C);
             *psa = psa.sqrt();
         }
-
     }
-    fn boris_push(&mut self, ex: &Vec::<f32>, ey: &Vec::<f32>, ez: &Vec::<f32>,
-        bx: &Vec::<f32>, by: &Vec::<f32>, bz: &Vec::<f32>) {
+    fn boris_push(
+        &mut self,
+        ex: &Vec<f32>,
+        ey: &Vec<f32>,
+        ez: &Vec<f32>,
+        bx: &Vec<f32>,
+        by: &Vec<f32>,
+        bz: &Vec<f32>,
+    ) {
         // local vars we will use
-        let mut ijm1: usize; let mut ijp1: usize; let mut ij: usize;
+        let mut ijm1: usize;
+        let mut ijp1: usize;
+        let mut ij: usize;
 
         // for the weights
-        let mut w00: f32; let mut w01: f32; let mut w02: f32;
-        let mut w10: f32; let mut w11: f32; let mut w12: f32;
-        let mut w20: f32; let mut w21: f32; let mut w22: f32;
+        let mut w00: f32;
+        let mut w01: f32;
+        let mut w02: f32;
+        let mut w10: f32;
+        let mut w11: f32;
+        let mut w12: f32;
+        let mut w20: f32;
+        let mut w21: f32;
+        let mut w22: f32;
 
-        let mut ext: f32; let mut eyt: f32; let mut ezt: f32;
-        let mut bxt: f32; let mut byt: f32; let mut bzt: f32;
-        let mut ux: f32;  let mut uy: f32;  let mut uz: f32;
-        let mut uxt: f32;  let mut uyt: f32;  let mut uzt: f32;
-        let mut pt: f32; let mut gt: f32; let mut boris: f32;
+        let mut ext: f32;
+        let mut eyt: f32;
+        let mut ezt: f32;
+        let mut bxt: f32;
+        let mut byt: f32;
+        let mut bzt: f32;
+        let mut ux: f32;
+        let mut uy: f32;
+        let mut uz: f32;
+        let mut uxt: f32;
+        let mut uyt: f32;
+        let mut uzt: f32;
+        let mut pt: f32;
+        let mut gt: f32;
+        let mut boris: f32;
 
-        for (ix, iy, dx, dy, px, py, pz, psa) in izip!(&self.ix, &self.iy, &self.dx, &self.dy, &mut self.px, &mut self.py, &mut self.pz, &mut self.psa) {
+        for (ix, iy, dx, dy, px, py, pz, psa) in izip!(
+            &self.ix,
+            &self.iy,
+            &self.dx,
+            &self.dy,
+            &mut self.px,
+            &mut self.py,
+            &mut self.pz,
+            &mut self.psa
+        ) {
             ijm1 = iy - 1;
             ijp1 = iy + 1;
-            ij = iy * (2 + *SIZE_X); ijm1 *= 2 + *SIZE_X; ijp1 *= 2 + *SIZE_X;
+            ij = iy * (2 + *SIZE_X);
+            ijm1 *= 2 + *SIZE_X;
+            ijp1 *= 2 + *SIZE_X;
             // CALC WEIGHTS
             // 2nd order
             // The weighting scheme prtl is in middle
@@ -277,7 +312,9 @@ impl Prtl {
                 ezt += w21 * ez.get_unchecked(ijp1 + ix);
                 ezt += w22 * ez.get_unchecked(ijp1 + ix + 1);
 
-                ext *= self.beta; eyt *= self.beta; ezt *= self.beta;
+                ext *= self.beta;
+                eyt *= self.beta;
+                ezt *= self.beta;
 
                 bxt = w00 * bx.get_unchecked(ij + ix - 1);
                 bxt += w01 * bx.get_unchecked(ij + ix);
@@ -309,14 +346,16 @@ impl Prtl {
                 bzt += w21 * bz.get_unchecked(ijp1 + ix);
                 bzt += w22 * bz.get_unchecked(ijp1 + ix + 1);
 
-                bxt *= self.alpha; byt *= self.alpha; bzt *= self.alpha;
+                bxt *= self.alpha;
+                byt *= self.alpha;
+                bzt *= self.alpha;
             }
             //  Now, the Boris push:
             ux = *px + ext;
             uy = *py + eyt;
             uz = *pz + ezt;
             pt = ux * ux + uy * uy + uz * uz;
-            gt = (1. + pt * *CSQINV ).sqrt().powi(-1);
+            gt = (1. + pt * *CSQINV).sqrt().powi(-1);
 
             bxt *= gt;
             byt *= gt;
@@ -324,9 +363,9 @@ impl Prtl {
 
             boris = 2.0 * (1.0 + bxt * bxt + byt * byt + bzt * bzt).powi(-1);
 
-            uxt = ux + uy*bzt - uz*byt;
-            uyt = uy + uz*bxt - ux*bzt;
-            uzt = uz + ux*byt - uy*bxt;
+            uxt = ux + uy * bzt - uz * byt;
+            uyt = uy + uz * bxt - ux * bzt;
+            uzt = uz + ux * byt - uy * bxt;
 
             *px = ux + boris * (uyt * bzt - uzt * byt) + ext;
             *py = uy + boris * (uzt * bxt - uxt * bzt) + eyt;
@@ -335,19 +374,31 @@ impl Prtl {
             *psa = (1.0 + (*px * *px + *py * *py + *pz * *pz) * *CSQINV).sqrt()
         }
     }
-    fn deposit_current (&self, jx: &mut Vec::<f32>, jy: &mut Vec::<f32>, jz: &mut Vec::<f32>) {
+    fn deposit_current(&self, jx: &mut Vec<f32>, jy: &mut Vec<f32>, jz: &mut Vec<f32>) {
         // local vars we will use
-        let mut ij: usize; let mut ijm1: usize; let mut ijp1: usize;
+        let mut ij: usize;
+        let mut ijm1: usize;
+        let mut ijp1: usize;
 
         // for the weights
-        let mut w00: f32; let mut w01: f32; let mut w02: f32;
-        let mut w10: f32; let mut w11: f32; let mut w12: f32;
-        let mut w20: f32; let mut w21: f32; let mut w22: f32;
+        let mut w00: f32;
+        let mut w01: f32;
+        let mut w02: f32;
+        let mut w10: f32;
+        let mut w11: f32;
+        let mut w12: f32;
+        let mut w20: f32;
+        let mut w21: f32;
+        let mut w22: f32;
 
-        let mut vx: f32; let mut vy: f32; let mut vz: f32;
+        let mut vx: f32;
+        let mut vy: f32;
+        let mut vz: f32;
         let mut psa_inv: f32;
 
-        for (ix, iy, dx, dy, px, py, pz, psa) in izip!(&self.ix, &self.iy, &self.dx, &self.dy, &self.px, &self.py, &self.pz, &self.psa) {
+        for (ix, iy, dx, dy, px, py, pz, psa) in
+            izip!(&self.ix, &self.iy, &self.dx, &self.dy, &self.px, &self.py, &self.pz, &self.psa)
+        {
             ijm1 = iy - 1;
             ijp1 = iy + 1;
             //if ix1 >= *SIZE_X {
@@ -356,7 +407,9 @@ impl Prtl {
             //} else if ix2 >= *SIZE_X {
             //    ix2 -= *SIZE_X;
             //}
-            ij = iy *  (2 + *SIZE_X); ijm1 *= 2 + *SIZE_X; ijp1 *= 2 + *SIZE_X;
+            ij = iy * (2 + *SIZE_X);
+            ijm1 *= 2 + *SIZE_X;
+            ijp1 *= 2 + *SIZE_X;
             psa_inv = psa.powf(-1.0);
             vx = self.charge * px * psa_inv;
             vy = self.charge * py * psa_inv;
@@ -371,19 +424,19 @@ impl Prtl {
             // # ----------------------
             // # | w2,0 | w2,1 | w2,2 |
             // # ----------------------
-            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
             w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
-            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
+            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
             w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
-            w12 = (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
-            w20 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5-dx); // y0
+            w12 = (0.75 - dy * dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
+            w20 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
             w21 = 0.5 * (0.5 + dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5+dx); // y0
+            w22 = 0.5 * (0.5 + dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
 
             // Deposit the CURRENT
             unsafe {
-                *jx.get_unchecked_mut(ijm1 + ix -1) += w00 * vx;
+                *jx.get_unchecked_mut(ijm1 + ix - 1) += w00 * vx;
                 *jx.get_unchecked_mut(ijm1 + ix) += w01 * vx;
                 *jx.get_unchecked_mut(ijm1 + ix + 1) += w02 * vx;
                 *jx.get_unchecked_mut(ij + ix - 1) += w10 * vx;
@@ -415,11 +468,19 @@ impl Prtl {
             }
         }
     }
-    fn move_and_deposit(&mut self,  jx: &mut Vec::<f32>, jy: &mut Vec::<f32>, jz: &mut Vec::<f32>) {
+    fn move_and_deposit(&mut self, jx: &mut Vec<f32>, jy: &mut Vec<f32>, jz: &mut Vec<f32>) {
         // FIRST we update positions of particles
         let mut c1: f32;
-        for (ix, iy, dx, dy, px, py, psa) in izip!(&mut self.ix, &mut self.iy, &mut self.dx, &mut self.dy, & self.px, & self.py, & self.psa) {
-            c1 =  0.5 * *DT * psa.powi(-1);
+        for (ix, iy, dx, dy, px, py, psa) in izip!(
+            &mut self.ix,
+            &mut self.iy,
+            &mut self.dx,
+            &mut self.dy,
+            &self.px,
+            &self.py,
+            &self.psa
+        ) {
+            c1 = 0.5 * *DT * psa.powi(-1);
             *dx += c1 * px;
             if *dx >= 0.5 {
                 *dx -= 1.0;
@@ -440,13 +501,20 @@ impl Prtl {
         //self.dsty *=0
         self.apply_bc();
 
-
         // Deposit currents
         self.deposit_current(jx, jy, jz);
 
         // UPDATE POS AGAIN!
-        for (ix, iy, dx, dy, px, py, psa) in izip!(&mut self.ix, &mut self.iy, &mut self.dx, &mut self.dy, & self.px, & self.py, & self.psa) {
-            c1 =  0.5 * *DT * psa.powi(-1);
+        for (ix, iy, dx, dy, px, py, psa) in izip!(
+            &mut self.ix,
+            &mut self.iy,
+            &mut self.dx,
+            &mut self.dy,
+            &self.px,
+            &self.py,
+            &self.psa
+        ) {
+            c1 = 0.5 * *DT * psa.powi(-1);
             *dx += c1 * px;
             if *dx >= 0.5 {
                 *dx -= 1.0;
@@ -471,7 +539,6 @@ impl Prtl {
         //self.sim.dsty += self.charge*self.dsty
     }
 }
-
 
 fn fibonacci() {
     let mut sim = new_sim();
