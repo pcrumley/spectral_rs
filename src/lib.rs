@@ -86,7 +86,7 @@ pub fn run(cfg: Config) -> Result<()> {
     for t in 0..sim.t_final + 1 {
         if cfg.output.write_output {
             if t % cfg.output.output_interval == 0 {
-                let prefix = format!("output/dat_{:05}", t / cfg.output.output_interal);
+                let prefix = format!("output/dat_{:05}", t / cfg.output.output_interval);
                 fs::create_dir_all(&prefix)?;
                 println!("saving prtls");
                 let x: Vec<f32> = prtls[0]
@@ -470,6 +470,7 @@ impl Flds {
         }
     }
 }
+#[cfg(dprec)]
 struct Sim {
     // flds: Flds,
     // prtls: Vec<Prtl>,
@@ -483,7 +484,24 @@ struct Sim {
     dens: u32,
     gamma_inj: f32,  // Speed of upstream flow
     prtl_num: usize, // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
-    n_pass: u32,     // = 4; //Number of filter passes
+    n_pass: u8,      // = 4; //Number of filter passes
+}
+
+#[cfg(not(dprec))]
+struct Sim {
+    // flds: Flds,
+    // prtls: Vec<Prtl>,
+    t: u32,
+    t_final: u32,
+    size_x: usize,
+    size_y: usize,
+    delta: usize,
+    dt: f32,
+    c: f32,
+    dens: u16,
+    gamma_inj: f32,  // Speed of upstream flow
+    prtl_num: usize, // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
+    n_pass: u8,      // = 4; //Number of filter passes
 }
 
 impl Sim {
