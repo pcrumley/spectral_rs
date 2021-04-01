@@ -1,18 +1,13 @@
 use serde::{Deserialize};
 use std::fs;
-use std::error::Error;
 use rand::prelude::*;
 use rand_distr::StandardNormal;
 use rand_distr::Standard;
 const PI:f32 = std::f32::consts::PI;
-use std::sync::Arc;
 use rustfft::FFTplanner;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
-
-#[macro_use]
-extern crate npy_derive;
-extern crate npy;
+use anyhow::{Context, Result};
 
 #[macro_use] extern crate itertools;
 
@@ -20,13 +15,16 @@ extern crate npy;
 pub struct Config {
     pub params: Params,
     pub setup: Setup,
-    pub output: Output
+    pub output: Output,
 }
 
 #[derive(Deserialize)]
 pub struct Setup {
     pub t_final: u32,
 }
+
+
+
 #[derive(Deserialize)]
 pub struct Output {
     pub track_prtls: bool,
@@ -36,6 +34,21 @@ pub struct Output {
     pub stride: usize,
 }
 
+
+#[cfg(dprec)]
+#[derive(Deserialize)]
+pub struct Params {
+    pub size_x: usize,
+    pub size_y: usize,
+    pub delta: usize,
+    pub dt: f64,
+    pub c: f64,
+    pub dens: u16,
+    pub gamma_inj: f64,
+    pub n_pass: u8,
+}
+
+#[cfg(not(dprec))]
 #[derive(Deserialize)]
 pub struct Params {
     pub size_x: usize,
@@ -43,20 +56,22 @@ pub struct Params {
     pub delta: usize,
     pub dt: f32,
     pub c: f32,
-    pub dens: u32,
+    pub dens: u16,
     pub gamma_inj: f32,
-    pub n_pass: u32,
+    pub n_pass: u8,
 }
+
+
 impl Config {
-    pub fn new() ->  Result<Config, &'static str> {
+    pub fn new() ->  Result<Config> {
         let contents = fs::read_to_string("config.toml")
-           .expect("Something went wrong reading the config.toml file");
-        let config: Config = toml::from_str(&contents).unwrap();
-        Ok( config )
+            .context("Could not open the config.toml file")?;
+        toml::from_str(&contents)
+            .with_context(|| "Could not parse Config file")
     }
 }
-pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
-    //let contents = fs::read_to_string(Sconfig.params.n_pass)?;
+
+pub fn run(cfg: Config) -> Result<()> { 
     let sim = Sim::new(&cfg);
     let mut prtls = Vec::<Prtl>::new();
     // Add ions to prtls list
@@ -72,7 +87,8 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
     for t in 0 .. sim.t_final + 1 {
         if cfg.output.write_output {
             if t % cfg.output.output_interval == 0 {
-                fs::create_dir_all(format!("output/dat_{:04}", t/cfg.output.output_interval))?;
+                let prefix = format!("output/dat_{:05}", t/cfg.output.output_interal);
+                fs::create_dir_all(&prefix)?;
                 println!("saving prtls");
                 let x: Vec::<f32> = prtls[0].ix.iter()
                         .zip(prtls[0].dx.iter())
@@ -92,7 +108,7 @@ pub fn run(cfg: Config) -> Result<(), Box<dyn Error>> {
                     .step_by(cfg.output.stride)
                     .map(|&x| x/sim.c)).unwrap();
                 npy::to_file(format!("output/dat_{:04}/gam.npy", t/cfg.output.output_interval),
-                        prtls[0].psa.clone()).unwrap();
+                        prtls[0].psa.clone()).context("Error saving writing output/dat_{:04}/gam.npy");
             }
         }
         if cfg.output.track_prtls {
@@ -207,6 +223,12 @@ struct Flds {
     k_x: Vec<f32>,
     k_y: Vec<f32>,
     k_norm: Vec<f32>,
+    b_xr: Vec<Complex<f32>>,
+    b_yr: Vec<Complex<f32>>,
+    b_zr: Vec<Complex<f32>>,
+    b_x2: Vec<Complex<f32>>,
+    b_y2: Vec<Complex<f32>>,
+    b_z2: Vec<Complex<f32>>,
     fft_x: std::sync::Arc<dyn rustfft::FFT<f32>>,
     ifft_x: std::sync::Arc<dyn rustfft::FFT<f32>>,
     fft_y: std::sync::Arc<dyn rustfft::FFT<f32>>,
@@ -264,6 +286,12 @@ impl Flds {
             c_x: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             c_y: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             c_z: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_xr: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_yr: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_zr: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_x2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_y2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_z2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             dsty: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
             dsty_cmp: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
         };
@@ -363,7 +391,16 @@ impl Flds {
         Flds::fft2d(self.fft_x.clone(), self.fft_y.clone(), sim, &mut self.c_z, &mut self.cmp_wrkspace);
         Flds::fft2d(self.fft_x.clone(), self.fft_y.clone(), sim, &mut self.dsty_cmp, &mut self.cmp_wrkspace);
 
-
+        // copy previous timestep should maybe use memcopy
+        for (b2, br) in self.b_x2.iter_mut().zip(self.b_xr.iter()) {
+            *b2 = *br;
+        }
+        for (b2, br) in self.b_y2.iter_mut().zip(self.b_yr.iter()) {
+            *b2 = *br;
+        }
+        for (b2, br) in self.b_z2.iter_mut().zip(self.b_zr.iter()) {
+            *b2 = *br;
+        }
     }
 }
 struct Sim {
