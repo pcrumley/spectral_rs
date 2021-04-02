@@ -5,12 +5,10 @@ use serde::Deserialize;
 use std::fs;
 const PI: f32 = std::f32::consts::PI;
 use anyhow::{Context, Result};
+use itertools::izip;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FFTplanner;
-
-#[macro_use]
-extern crate itertools;
 
 #[derive(Deserialize)]
 pub struct Config {
@@ -26,9 +24,9 @@ pub struct Setup {
 
 #[derive(Deserialize)]
 pub struct Output {
-    pub track_prtls: bool,
+    pub _track_prtls: bool,
     pub write_output: bool,
-    pub track_interval: u32,
+    pub _track_interval: u32,
     pub output_interval: u32,
     pub stride: usize,
 }
@@ -77,19 +75,21 @@ pub fn run(cfg: Config) -> Result<()> {
     prtls.push(Prtl::new(&sim, -1.0, 1.0, 1E-3));
 
     let mut flds = Flds::new(&sim);
+    /* TODO add better particle tracking
     let mut x_track =
         Vec::<f32>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
     let mut y_track =
         Vec::<f32>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
     let mut gam_track =
         Vec::<f32>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
-    for t in 0..sim.t_final + 1 {
+    */
+    for t in 0..=sim.t_final {
         if cfg.output.write_output {
             if t % cfg.output.output_interval == 0 {
-                let prefix = format!("output/dat_{:05}", t / cfg.output.output_interval);
-                fs::create_dir_all(&prefix)?;
+                let output_prefix = format!("output/dat_{:05}", t / cfg.output.output_interval);
+                fs::create_dir_all(&output_prefix).context("Unable to create output directory")?;
                 println!("saving prtls");
-                let x: Vec<f32> = prtls[0]
+                let x: Vec<_> = prtls[0]
                     .ix
                     .iter()
                     .zip(prtls[0].dx.iter())
@@ -97,11 +97,8 @@ pub fn run(cfg: Config) -> Result<()> {
                     .map(|(&ix, &dx)| ix as f32 + dx)
                     .collect();
 
-                npy::to_file(
-                    format!("output/dat_{:04}/x.npy", t / cfg.output.output_interval),
-                    x,
-                )
-                .unwrap();
+                npy::to_file(format!("{}/x.npy", output_prefix), x)
+                    .context("Could not save x data to file")?;
                 let y: Vec<f32> = prtls[0]
                     .iy
                     .iter()
@@ -109,28 +106,31 @@ pub fn run(cfg: Config) -> Result<()> {
                     .step_by(cfg.output.stride)
                     .map(|(&iy, &dy)| iy as f32 + dy)
                     .collect();
-                npy::to_file(
-                    format!("output/dat_{:04}/y.npy", t / cfg.output.output_interval),
-                    y,
-                )
-                .unwrap();
-                npy::to_file(
-                    format!("output/dat_{:04}/u.npy", t / cfg.output.output_interval),
-                    prtls[0]
-                        .px
-                        .clone()
-                        .iter()
-                        .step_by(cfg.output.stride)
-                        .map(|&x| x / sim.c),
-                )
-                .unwrap();
-                npy::to_file(
-                    format!("output/dat_{:04}/gam.npy", t / cfg.output.output_interval),
-                    prtls[0].psa.clone(),
-                )
-                .context("Error saving writing output/dat_{:04}/gam.npy");
+                npy::to_file(format!("{}/y.npy", output_prefix), y)
+                    .context("Could not save y prtl data")?;
+
+                let u: Vec<_> = prtls[0]
+                    .px
+                    .iter()
+                    .step_by(cfg.output.stride)
+                    .map(|&x| x / sim.c)
+                    .collect();
+
+                npy::to_file(format!("{}/u.npy", output_prefix), u)
+                    .context("Could not save u data to file")?;
+
+                let gam: Vec<_> = prtls[0]
+                    .psa
+                    .iter()
+                    .step_by(cfg.output.stride)
+                    .map(|&psa| psa)
+                    .collect();
+
+                npy::to_file(format!("{}/gam.npy", output_prefix), gam)
+                    .context("Error saving writing lorentz factor to file")?;
             }
         }
+        /* TODO Add better way of tracking particles
         if cfg.output.track_prtls {
             if t % cfg.output.track_interval == 0 {
                 for (ix, iy, dx, dy, track, psa) in izip!(
@@ -149,6 +149,7 @@ pub fn run(cfg: Config) -> Result<()> {
                 }
             }
         }
+        */
         // Zero out currents
         println!("{}", t);
         for (jx, jy, jz, dsty) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty)
@@ -181,12 +182,14 @@ pub fn run(cfg: Config) -> Result<()> {
 
         // let sim.t = t;
     }
+    /*
     if cfg.output.track_prtls {
         fs::create_dir_all("output/trckd_prtl/")?;
         npy::to_file("output/trckd_prtl/x.npy", x_track)?;
         npy::to_file("output/trckd_prtl/y.npy", y_track)?;
         npy::to_file("output/trckd_prtl/psa.npy", gam_track)?;
     }
+    */
     Ok(())
 }
 
