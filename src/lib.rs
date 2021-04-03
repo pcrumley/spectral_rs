@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use itertools::izip;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
-use rustfft::FFTplanner;
+use rustfft::FftPlanner;
 
 // We use a type alias for f64/Float to easily support
 // double and single precision.
@@ -261,10 +261,12 @@ struct Flds {
     b_x2: Vec<Complex<Float>>,
     b_y2: Vec<Complex<Float>>,
     b_z2: Vec<Complex<Float>>,
-    fft_x: std::sync::Arc<dyn rustfft::FFT<Float>>,
-    ifft_x: std::sync::Arc<dyn rustfft::FFT<Float>>,
-    fft_y: std::sync::Arc<dyn rustfft::FFT<Float>>,
-    ifft_y: std::sync::Arc<dyn rustfft::FFT<Float>>,
+    fft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
+    ifft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
+    fft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
+    ifft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
+    fft_x_buf: Vec<Complex<Float>>,
+    fft_y_buf: Vec<Complex<Float>>,
     real_wrkspace_ghosts: Vec<Float>,
     real_wrkspace: Vec<Float>,
     cmp_wrkspace: Vec<Complex<Float>>,
@@ -277,22 +279,18 @@ struct Flds {
 impl Flds {
     fn new(sim: &Sim) -> Flds {
         //let Bnorm = 0Float;
-        let mut planner = FFTplanner::new(false);
+        let mut planner = FftPlanner::new();
         //let () = planner;
-        let mut inv_planner = FFTplanner::new(true);
+        let mut inv_planner = FftPlanner::new();
         //let mut input:  Vec<Complex<Float>> = vec![Complex::zero(); sim.size_x];
         //let mut output: Vec<Complex<Float>> = vec![Complex::zero();  sim.size_x];
 
-        let fft_x = planner.plan_fft(sim.size_x);
-        let ifft_x = inv_planner.plan_fft(sim.size_x);
-        let fft_y = planner.plan_fft(sim.size_y);
-        let ifft_y = planner.plan_fft(sim.size_y);
-        let mut input: Vec<Complex<Float>> = vec![Complex::zero(); sim.size_x];
-        let mut output: Vec<Complex<Float>> = vec![Complex::zero(); sim.size_x];
-        //let ifft_x = inv_planner.plan_fft(sim.size_x);
-        //let fft_y = planner.plan_fft(sim.size_y);
-        //let ifft_y = inv_planner.plan_fft(sim.size_y);
-        fft_x.process(&mut input, &mut output);
+        let fft_x = planner.plan_fft_forward(sim.size_x);
+        let ifft_x = inv_planner.plan_fft_inverse(sim.size_x);
+        let fft_y = planner.plan_fft_forward(sim.size_y);
+        let ifft_y = planner.plan_fft_inverse(sim.size_y);
+        let xscratch = vec![Complex::zero(); fft_x.get_outofplace_scratch_len()];
+        let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
 
         let mut f = Flds {
             e_x: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)], // 2 Ghost zones. 1 at 0, 1 at SIZE_X
@@ -311,6 +309,8 @@ impl Flds {
             ifft_x: ifft_x,
             fft_y: fft_y,
             ifft_y: ifft_y,
+            fft_x_buf: xscratch,
+            fft_y_buf: yscratch,
             real_wrkspace_ghosts: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
             real_wrkspace: vec![0.0; (sim.size_y) * (sim.size_x)],
             cmp_wrkspace: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
@@ -381,23 +381,27 @@ impl Flds {
         }
     }
     pub fn fft2d(
-        fft_x: std::sync::Arc<dyn rustfft::FFT<Float>>,
-        fft_y: std::sync::Arc<dyn rustfft::FFT<Float>>,
+        fft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
+        fft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
         sim: &Sim,
         fld: &mut Vec<Complex<Float>>,
         wrk_space: &mut Vec<Complex<Float>>,
+        xscratch: &mut Vec<Complex<Float>>,
+        yscratch: &mut Vec<Complex<Float>>,
     ) {
         for iy in (0..sim.size_y * sim.size_x).step_by(sim.size_x) {
-            fft_x.process(
+            fft_x.process_outofplace_with_scratch(
                 &mut fld[iy..iy + sim.size_x],
                 &mut wrk_space[iy..iy + sim.size_x],
+                xscratch,
             );
         }
         Flds::transpose(sim, wrk_space, fld);
         for iy in (0..sim.size_x * sim.size_y).step_by(sim.size_y) {
-            fft_y.process(
+            fft_y.process_outofplace_with_scratch(
                 &mut fld[iy..iy + sim.size_y],
                 &mut wrk_space[iy..iy + sim.size_y],
+                yscratch,
             );
         }
         Flds::transpose(sim, wrk_space, fld);
@@ -434,6 +438,8 @@ impl Flds {
             sim,
             &mut self.c_x,
             &mut self.cmp_wrkspace,
+            &mut self.fft_x_buf,
+            &mut self.fft_y_buf,
         );
         Flds::fft2d(
             self.fft_x.clone(),
@@ -441,6 +447,8 @@ impl Flds {
             sim,
             &mut self.c_y,
             &mut self.cmp_wrkspace,
+            &mut self.fft_x_buf,
+            &mut self.fft_y_buf,
         );
         Flds::fft2d(
             self.fft_x.clone(),
@@ -448,6 +456,9 @@ impl Flds {
             sim,
             &mut self.c_z,
             &mut self.cmp_wrkspace,
+            &mut self.fft_x_buf,
+            &mut self.fft_y_buf,
+
         );
         Flds::fft2d(
             self.fft_x.clone(),
@@ -455,7 +466,9 @@ impl Flds {
             sim,
             &mut self.dsty_cmp,
             &mut self.cmp_wrkspace,
-        );
+            &mut self.fft_x_buf,
+            &mut self.fft_y_buf,
+       );
 
         // copy previous timestep should maybe use memcopy
         for (b2, br) in self.b_x2.iter_mut().zip(self.b_xr.iter()) {
