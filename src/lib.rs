@@ -10,7 +10,7 @@ use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FFTplanner;
 
-// We use a type alias for f64/f32 to easily support
+// We use a type alias for f64/Float to easily support
 // double and single precision.
 #[cfg(feature = "dprec")]
 type Float = f64;
@@ -34,9 +34,9 @@ pub struct Setup {
 
 #[derive(Deserialize)]
 pub struct Output {
-    pub _track_prtls: bool,
+    pub track_prtls: bool,
     pub write_output: bool,
-    pub _track_interval: u32,
+    pub track_interval: u32,
     pub output_interval: u32,
     pub stride: usize,
 }
@@ -73,11 +73,11 @@ pub fn run(cfg: Config) -> Result<()> {
     let mut flds = Flds::new(&sim);
     /* TODO add better particle tracking
     let mut x_track =
-        Vec::<f32>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
+        Vec::<Float>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
     let mut y_track =
-        Vec::<f32>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
+        Vec::<Float>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
     let mut gam_track =
-        Vec::<f32>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
+        Vec::<Float>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
     */
     for t in 0..=sim.t_final {
         if cfg.output.write_output {
@@ -138,8 +138,8 @@ pub fn run(cfg: Config) -> Result<()> {
                     &prtls[0].psa
                 ) {
                     if *track {
-                        x_track.push((*ix as f32 + *dx) / sim.c);
-                        y_track.push((*iy as f32 + *dy) / sim.c);
+                        x_track.push((*ix as Float + *dx) / sim.c);
+                        y_track.push((*iy as Float + *dy) / sim.c);
                         gam_track.push(*psa);
                     }
                 }
@@ -276,12 +276,12 @@ struct Flds {
 }
 impl Flds {
     fn new(sim: &Sim) -> Flds {
-        //let Bnorm = 0f32;
+        //let Bnorm = 0Float;
         let mut planner = FFTplanner::new(false);
         //let () = planner;
         let mut inv_planner = FFTplanner::new(true);
-        //let mut input:  Vec<Complex<f32>> = vec![Complex::zero(); sim.size_x];
-        //let mut output: Vec<Complex<f32>> = vec![Complex::zero();  sim.size_x];
+        //let mut input:  Vec<Complex<Float>> = vec![Complex::zero(); sim.size_x];
+        //let mut output: Vec<Complex<Float>> = vec![Complex::zero();  sim.size_x];
 
         let fft_x = planner.plan_fft(sim.size_x);
         let ifft_x = inv_planner.plan_fft(sim.size_x);
@@ -890,10 +890,10 @@ impl Prtl {
                 for j in sim.delta..sim.size_x - sim.delta {
                     for k in 0..sim.dens as usize {
                         // RANDOM OPT
-                        // let r1: f32 = rng.sample(Standard);
-                        // let r2: f32 = rng.sample(Standard);
-                        // self.x[c1+k]= r1 + (j as f32);
-                        // self.y[c1+k]= r2 + (i as f32);
+                        // let r1: Float = rng.sample(Standard);
+                        // let r2: Float = rng.sample(Standard);
+                        // self.x[c1+k]= r1 + (j as Float);
+                        // self.y[c1+k]= r2 + (i as Float);
 
                         // UNIFORM OPT
                         self.iy[c1 + k] = i + 1;
