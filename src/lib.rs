@@ -3,12 +3,22 @@ use rand_distr::Standard;
 use rand_distr::StandardNormal;
 use serde::Deserialize;
 use std::fs;
-const PI: f32 = std::f32::consts::PI;
+
 use anyhow::{Context, Result};
 use itertools::izip;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FFTplanner;
+
+// We use a type alias for f64/f32 to easily support
+// double and single precision.
+#[cfg(feature = "dprec")]
+type Float = f64;
+
+#[cfg(not(feature = "dprec"))]
+type Float = f32;
+
+const PI: Float = std::f64::consts::PI as Float;
 
 #[derive(Deserialize)]
 pub struct Config {
@@ -31,29 +41,15 @@ pub struct Output {
     pub stride: usize,
 }
 
-#[cfg(dprec)]
 #[derive(Deserialize)]
 pub struct Params {
     pub size_x: usize,
     pub size_y: usize,
     pub delta: usize,
-    pub dt: f64,
-    pub c: f64,
-    pub dens: u16,
-    pub gamma_inj: f64,
-    pub n_pass: u8,
-}
-
-#[cfg(not(dprec))]
-#[derive(Deserialize)]
-pub struct Params {
-    pub size_x: usize,
-    pub size_y: usize,
-    pub delta: usize,
-    pub dt: f32,
-    pub c: f32,
-    pub dens: u16,
-    pub gamma_inj: f32,
+    pub dt: Float,
+    pub c: Float,
+    pub dens: u32,
+    pub gamma_inj: Float,
     pub n_pass: u8,
 }
 
@@ -89,22 +85,22 @@ pub fn run(cfg: Config) -> Result<()> {
                 let output_prefix = format!("output/dat_{:05}", t / cfg.output.output_interval);
                 fs::create_dir_all(&output_prefix).context("Unable to create output directory")?;
                 println!("saving prtls");
-                let x: Vec<_> = prtls[0]
+                let x: Vec<Float> = prtls[0]
                     .ix
                     .iter()
                     .zip(prtls[0].dx.iter())
                     .step_by(cfg.output.stride)
-                    .map(|(&ix, &dx)| ix as f32 + dx)
+                    .map(|(&ix, &dx)| ix as Float + dx)
                     .collect();
 
                 npy::to_file(format!("{}/x.npy", output_prefix), x)
                     .context("Could not save x data to file")?;
-                let y: Vec<f32> = prtls[0]
+                let y: Vec<Float> = prtls[0]
                     .iy
                     .iter()
                     .zip(prtls[0].dy.iter())
                     .step_by(cfg.output.stride)
-                    .map(|(&iy, &dy)| iy as f32 + dy)
+                    .map(|(&iy, &dy)| iy as Float + dy)
                     .collect();
                 npy::to_file(format!("{}/y.npy", output_prefix), y)
                     .context("Could not save y prtl data")?;
@@ -193,9 +189,9 @@ pub fn run(cfg: Config) -> Result<()> {
     Ok(())
 }
 
-fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<f32>, wrkspace: &mut Vec<f32>) {
+fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Float>) {
     // wrkspace should be same size as fld
-    let weights: [f32; 3] = [0.25, 0.5, 0.25];
+    let weights: [Float; 3] = [0.25, 0.5, 0.25];
     // account for ghost zones
     // FIRST FILTER IN X-DIRECTION
     for _ in 0..sim.n_pass {
@@ -205,7 +201,7 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<f32>, wrkspace: &mut Vec<f32>
                     .iter()
                     .zip(&in_vec[i + j - 1..i + j + 1])
                     .map(|(&w, &f)| w * f)
-                    .sum::<f32>();
+                    .sum::<Float>();
             }
             // handle the ghost zones in x direction
             wrkspace[i - 1] = wrkspace[i + sim.size_x];
@@ -230,7 +226,7 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<f32>, wrkspace: &mut Vec<f32>
                             .step_by(sim.size_x + 2),
                     )
                     .map(|(&w, &f)| w * f)
-                    .sum::<f32>();
+                    .sum::<Float>();
             }
             // handle the ghost zones in x direction
             in_vec[i - 1] = in_vec[i + sim.size_x];
@@ -247,36 +243,36 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<f32>, wrkspace: &mut Vec<f32>
     }
 }
 struct Flds {
-    e_x: Vec<f32>,
-    e_y: Vec<f32>,
-    e_z: Vec<f32>,
-    b_x: Vec<f32>,
-    b_y: Vec<f32>,
-    b_z: Vec<f32>,
-    j_x: Vec<f32>,
-    j_y: Vec<f32>,
-    j_z: Vec<f32>,
-    k_x: Vec<f32>,
-    k_y: Vec<f32>,
-    k_norm: Vec<f32>,
-    b_xr: Vec<Complex<f32>>,
-    b_yr: Vec<Complex<f32>>,
-    b_zr: Vec<Complex<f32>>,
-    b_x2: Vec<Complex<f32>>,
-    b_y2: Vec<Complex<f32>>,
-    b_z2: Vec<Complex<f32>>,
-    fft_x: std::sync::Arc<dyn rustfft::FFT<f32>>,
-    ifft_x: std::sync::Arc<dyn rustfft::FFT<f32>>,
-    fft_y: std::sync::Arc<dyn rustfft::FFT<f32>>,
-    ifft_y: std::sync::Arc<dyn rustfft::FFT<f32>>,
-    real_wrkspace_ghosts: Vec<f32>,
-    real_wrkspace: Vec<f32>,
-    cmp_wrkspace: Vec<Complex<f32>>,
-    c_x: Vec<Complex<f32>>,
-    c_y: Vec<Complex<f32>>,
-    c_z: Vec<Complex<f32>>,
-    dsty_cmp: Vec<Complex<f32>>,
-    dsty: Vec<f32>,
+    e_x: Vec<Float>,
+    e_y: Vec<Float>,
+    e_z: Vec<Float>,
+    b_x: Vec<Float>,
+    b_y: Vec<Float>,
+    b_z: Vec<Float>,
+    j_x: Vec<Float>,
+    j_y: Vec<Float>,
+    j_z: Vec<Float>,
+    k_x: Vec<Float>,
+    k_y: Vec<Float>,
+    k_norm: Vec<Float>,
+    b_xr: Vec<Complex<Float>>,
+    b_yr: Vec<Complex<Float>>,
+    b_zr: Vec<Complex<Float>>,
+    b_x2: Vec<Complex<Float>>,
+    b_y2: Vec<Complex<Float>>,
+    b_z2: Vec<Complex<Float>>,
+    fft_x: std::sync::Arc<dyn rustfft::FFT<Float>>,
+    ifft_x: std::sync::Arc<dyn rustfft::FFT<Float>>,
+    fft_y: std::sync::Arc<dyn rustfft::FFT<Float>>,
+    ifft_y: std::sync::Arc<dyn rustfft::FFT<Float>>,
+    real_wrkspace_ghosts: Vec<Float>,
+    real_wrkspace: Vec<Float>,
+    cmp_wrkspace: Vec<Complex<Float>>,
+    c_x: Vec<Complex<Float>>,
+    c_y: Vec<Complex<Float>>,
+    c_z: Vec<Complex<Float>>,
+    dsty_cmp: Vec<Complex<Float>>,
+    dsty: Vec<Float>,
 }
 impl Flds {
     fn new(sim: &Sim) -> Flds {
@@ -291,32 +287,32 @@ impl Flds {
         let ifft_x = inv_planner.plan_fft(sim.size_x);
         let fft_y = planner.plan_fft(sim.size_y);
         let ifft_y = planner.plan_fft(sim.size_y);
-        let mut input: Vec<Complex<f32>> = vec![Complex::zero(); sim.size_x];
-        let mut output: Vec<Complex<f32>> = vec![Complex::zero(); sim.size_x];
+        let mut input: Vec<Complex<Float>> = vec![Complex::zero(); sim.size_x];
+        let mut output: Vec<Complex<Float>> = vec![Complex::zero(); sim.size_x];
         //let ifft_x = inv_planner.plan_fft(sim.size_x);
         //let fft_y = planner.plan_fft(sim.size_y);
         //let ifft_y = inv_planner.plan_fft(sim.size_y);
         fft_x.process(&mut input, &mut output);
 
         let mut f = Flds {
-            e_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)], // 2 Ghost zones. 1 at 0, 1 at SIZE_X
-            e_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            e_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            b_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            b_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            b_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            j_x: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            j_y: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            j_z: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            k_x: vec![0f32; sim.size_x],
-            k_y: vec![0f32; sim.size_y],
-            k_norm: vec![0f32; sim.size_y * sim.size_x],
+            e_x: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)], // 2 Ghost zones. 1 at 0, 1 at SIZE_X
+            e_y: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            e_z: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_x: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_y: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            b_z: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            j_x: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            j_y: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            j_z: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            k_x: vec![0.0; sim.size_x],
+            k_y: vec![0.0; sim.size_y],
+            k_norm: vec![0.0; sim.size_y * sim.size_x],
             fft_x: fft_x,
             ifft_x: ifft_x,
             fft_y: fft_y,
             ifft_y: ifft_y,
-            real_wrkspace_ghosts: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
-            real_wrkspace: vec![0f32; (sim.size_y) * (sim.size_x)],
+            real_wrkspace_ghosts: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
+            real_wrkspace: vec![0.0; (sim.size_y) * (sim.size_x)],
             cmp_wrkspace: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             c_x: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             c_y: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
@@ -327,23 +323,23 @@ impl Flds {
             b_x2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_y2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_z2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            dsty: vec![0f32; (sim.size_y + 2) * (sim.size_x + 2)],
+            dsty: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
             dsty_cmp: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
         };
         // Build the k basis of FFT
         for i in 0..f.k_x.len() {
-            f.k_x[i] = i as f32;
+            f.k_x[i] = i as Float;
             if i > sim.size_x / 2 + 1 {
-                f.k_x[i] -= sim.size_x as f32;
+                f.k_x[i] -= sim.size_x as Float;
             }
-            f.k_x[i] *= 2f32 * PI / (sim.size_x as f32);
+            f.k_x[i] *= 2.0 * PI / (sim.size_x as Float);
         }
         for i in 0..f.k_y.len() {
-            f.k_y[i] = i as f32;
+            f.k_y[i] = i as Float;
             if i > sim.size_y / 2 + 1 {
-                f.k_y[i] -= sim.size_y as f32;
+                f.k_y[i] -= sim.size_y as Float;
             }
-            f.k_y[i] *= 2f32 * PI / (sim.size_y as f32);
+            f.k_y[i] *= 2.0 * PI / (sim.size_y as Float);
         }
         // Make the norm:
         for i in 0..f.k_y.len() {
@@ -354,8 +350,8 @@ impl Flds {
 
         if false {
             for i in 0..(sim.size_y + 2) {
-                //let tmp_b = 2f32 * Bnorm * (sim.size_y/2 - (i - 1))/(sim.size_y as f32);
-                let tmp_b = 0f32;
+                //let tmp_b = 2.0 * Bnorm * (sim.size_y/2 - (i - 1))/(sim.size_y as Float);
+                let tmp_b = 0.0;
                 for j in 0..(sim.size_x + 2) {
                     if i > (sim.size_y) / 6 && i < 2 * sim.size_y / 6 {
                         f.e_y[i * (sim.size_x + 2) + j] = -0.9 * tmp_b;
@@ -370,7 +366,7 @@ impl Flds {
         }
         f
     }
-    pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<f32>>, out_fld: &mut Vec<Complex<f32>>) {
+    pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<Float>>, out_fld: &mut Vec<Complex<Float>>) {
         for i in 0..sim.size_y {
             for j in 0..sim.size_x {
                 if cfg!(feature = "unsafe") {
@@ -385,11 +381,11 @@ impl Flds {
         }
     }
     pub fn fft2d(
-        fft_x: std::sync::Arc<dyn rustfft::FFT<f32>>,
-        fft_y: std::sync::Arc<dyn rustfft::FFT<f32>>,
+        fft_x: std::sync::Arc<dyn rustfft::FFT<Float>>,
+        fft_y: std::sync::Arc<dyn rustfft::FFT<Float>>,
         sim: &Sim,
-        fld: &mut Vec<Complex<f32>>,
-        wrk_space: &mut Vec<Complex<f32>>,
+        fld: &mut Vec<Complex<Float>>,
+        wrk_space: &mut Vec<Complex<Float>>,
     ) {
         for iy in (0..sim.size_y * sim.size_x).step_by(sim.size_x) {
             fft_x.process(
@@ -407,8 +403,8 @@ impl Flds {
         Flds::transpose(sim, wrk_space, fld);
     }
     pub fn update(&mut self, sim: &Sim) {
-        let ckc = sim.dt / sim.dens as f32;
-        let cdt = sim.dt * sim.c as f32;
+        let ckc = sim.dt / sim.dens as Float;
+        let cdt = sim.dt * sim.c as Float;
         // Filter fields
         binomial_filter_2_d(sim, &mut self.j_x, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.j_y, &mut self.real_wrkspace_ghosts);
@@ -427,7 +423,7 @@ impl Flds {
                 self.c_y[ij + ix].im = 0.0;
                 self.c_z[ij + ix].re = self.j_z[ij_ghosts + ix + 1];
                 self.c_z[ij + ix].im = 0.0;
-                self.dsty_cmp[ij + ix].re = self.dsty[ij_ghosts + ix + 1] / (sim.dens as f32);
+                self.dsty_cmp[ij + ix].re = self.dsty[ij_ghosts + ix + 1] / (sim.dens as Float);
                 self.dsty_cmp[ij + ix].im = 0.0;
             }
         }
@@ -473,7 +469,6 @@ impl Flds {
         }
     }
 }
-#[cfg(dprec)]
 struct Sim {
     // flds: Flds,
     // prtls: Vec<Prtl>,
@@ -482,29 +477,12 @@ struct Sim {
     size_x: usize,
     size_y: usize,
     delta: usize,
-    dt: f32,
-    c: f32,
+    dt: Float,
+    c: Float,
     dens: u32,
-    gamma_inj: f32,  // Speed of upstream flow
-    prtl_num: usize, // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
-    n_pass: u8,      // = 4; //Number of filter passes
-}
-
-#[cfg(not(dprec))]
-struct Sim {
-    // flds: Flds,
-    // prtls: Vec<Prtl>,
-    t: u32,
-    t_final: u32,
-    size_x: usize,
-    size_y: usize,
-    delta: usize,
-    dt: f32,
-    c: f32,
-    dens: u16,
-    gamma_inj: f32,  // Speed of upstream flow
-    prtl_num: usize, // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
-    n_pass: u8,      // = 4; //Number of filter passes
+    gamma_inj: Float, // Speed of upstream flow
+    prtl_num: usize,  // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
+    n_pass: u8,       // = 4; //Number of filter passes
 }
 
 impl Sim {
@@ -518,11 +496,10 @@ impl Sim {
             dt: cfg.params.dt,
             c: cfg.params.c,
             dens: cfg.params.dens,
-            gamma_inj: cfg.params.gamma_inj, // Speed of upstream flow
+            gamma_inj: cfg.params.gamma_inj,
             prtl_num: cfg.params.dens as usize
                 * (cfg.params.size_x - 2 * cfg.params.delta)
                 * cfg.params.size_y,
-            //prtl_num: 100,
             n_pass: cfg.params.n_pass,
         }
     }
@@ -534,20 +511,20 @@ impl Sim {
         let mut ijp1: usize;
 
         // for the weights
-        let mut w00: f32;
-        let mut w01: f32;
-        let mut w02: f32;
-        let mut w10: f32;
-        let mut w11: f32;
-        let mut w12: f32;
-        let mut w20: f32;
-        let mut w21: f32;
-        let mut w22: f32;
+        let mut w00: Float;
+        let mut w01: Float;
+        let mut w02: Float;
+        let mut w10: Float;
+        let mut w11: Float;
+        let mut w12: Float;
+        let mut w20: Float;
+        let mut w21: Float;
+        let mut w22: Float;
 
-        let mut vx: f32;
-        let mut vy: f32;
-        let mut vz: f32;
-        let mut psa_inv: f32;
+        let mut vx: Float;
+        let mut vy: Float;
+        let mut vz: Float;
+        let mut psa_inv: Float;
 
         for (ix, iy, dx, dy, px, py, pz, psa) in
             izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy, &prtl.px, &prtl.py, &prtl.pz, &prtl.psa)
@@ -661,15 +638,15 @@ impl Sim {
         let mut ijp1: usize;
 
         // for the weights
-        let mut w00: f32;
-        let mut w01: f32;
-        let mut w02: f32;
-        let mut w10: f32;
-        let mut w11: f32;
-        let mut w12: f32;
-        let mut w20: f32;
-        let mut w21: f32;
-        let mut w22: f32;
+        let mut w00: Float;
+        let mut w01: Float;
+        let mut w02: Float;
+        let mut w10: Float;
+        let mut w11: Float;
+        let mut w12: Float;
+        let mut w20: Float;
+        let mut w21: Float;
+        let mut w22: Float;
 
         for (ix, iy, dx, dy) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy) {
             ijm1 = iy - 1;
@@ -732,7 +709,7 @@ impl Sim {
     }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
-        let mut c1: f32;
+        let mut c1: Float;
         for (ix, iy, dx, dy, px, py, psa) in izip!(
             &mut prtl.ix,
             &mut prtl.iy,
@@ -805,20 +782,20 @@ impl Sim {
 struct Prtl {
     ix: Vec<usize>,
     iy: Vec<usize>,
-    dx: Vec<f32>,
-    dy: Vec<f32>,
-    px: Vec<f32>,
-    py: Vec<f32>,
-    pz: Vec<f32>,
-    psa: Vec<f32>, // Lorentz Factors
-    charge: f32,
-    alpha: f32,
-    beta: f32,
-    vth: f32,
+    dx: Vec<Float>,
+    dy: Vec<Float>,
+    px: Vec<Float>,
+    py: Vec<Float>,
+    pz: Vec<Float>,
+    psa: Vec<Float>, // Lorentz Factors
+    charge: Float,
+    alpha: Float,
+    beta: Float,
+    vth: Float,
     tag: Vec<u64>,
     track: Vec<bool>,
 }
-fn fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: f32, dy: f32, fld: &Vec<f32>) -> f32 {
+fn fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: Float, dy: Float, fld: &Vec<Float>) -> Float {
     let ijm1 = (iy - 1) * (sim.size_x + 2) + ix;
     let ij = iy * (sim.size_x + 2) + ix;
     let ijp1 = (iy + 1) * (sim.size_x + 2) + ix;
@@ -843,22 +820,22 @@ fn fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: f32, dy: f32, fld: &Vec<f32>) -
                 .chain(fld[ijp1 - 1..ijp1 + 1].into_iter()),
         )
         .map(|(&w, &f)| w * f)
-        .sum::<f32>()
+        .sum::<Float>()
 }
 
 impl Prtl {
-    fn new(sim: &Sim, charge: f32, mass: f32, vth: f32) -> Prtl {
+    fn new(sim: &Sim, charge: Float, mass: Float, vth: Float) -> Prtl {
         let beta = (charge / mass) * 0.5 * sim.dt;
         let alpha = (charge / mass) * 0.5 * sim.dt / sim.c;
         let mut prtl = Prtl {
             ix: vec![0; sim.prtl_num],
-            dx: vec![0f32; sim.prtl_num],
+            dx: vec![0.0; sim.prtl_num],
             iy: vec![0; sim.prtl_num],
-            dy: vec![0f32; sim.prtl_num],
-            px: vec![0f32; sim.prtl_num],
-            py: vec![0f32; sim.prtl_num],
-            pz: vec![0f32; sim.prtl_num],
-            psa: vec![0f32; sim.prtl_num],
+            dy: vec![0.0; sim.prtl_num],
+            px: vec![0.0; sim.prtl_num],
+            py: vec![0.0; sim.prtl_num],
+            pz: vec![0.0; sim.prtl_num],
+            psa: vec![0.0; sim.prtl_num],
             track: vec![false; sim.prtl_num],
             tag: vec![0u64; sim.prtl_num],
             charge: charge,
@@ -922,8 +899,8 @@ impl Prtl {
                         self.iy[c1 + k] = i + 1;
                         self.ix[c1 + k] = j + 1;
 
-                        let mut r1 = 1.0 / (2.0 * (sim.dens as f32));
-                        r1 = (2. * (k as f32) + 1.) * r1;
+                        let mut r1 = 1.0 / (2.0 * (sim.dens as Float));
+                        r1 = (2. * (k as Float) + 1.) * r1;
                         self.dx[c1 + k] = r1 - 0.5;
                         self.dy[c1 + k] = r1 - 0.5;
                         self.tag[c1 + k] = (c1 + k) as u64;
@@ -934,7 +911,7 @@ impl Prtl {
             }
         } else {
             for i in 0..self.iy.len() {
-                self.iy[i] = 1 + i * ((sim.size_y as f32) / (self.iy.len() as f32)) as usize;
+                self.iy[i] = 1 + i * ((sim.size_y as Float) / (self.iy.len() as Float)) as usize;
                 self.ix[i] = sim.size_x - 4;
                 self.dx[i] = 0.0;
                 self.dy[i] = 0.0;
@@ -950,7 +927,7 @@ impl Prtl {
     fn initialize_velocities(&mut self, sim: &Sim) {
         //placeholder
         let csqinv = 1. / (sim.c * sim.c);
-        let beta_inj = -f32::sqrt(1. - sim.gamma_inj.powi(-2));
+        let beta_inj = -Float::sqrt(1. - sim.gamma_inj.powi(-2));
         // println!("{}", beta_inj);
         if true {
             let mut rng = thread_rng();
@@ -968,7 +945,7 @@ impl Prtl {
 
                 // Flip the px according to zenitani 2015
                 let mut ux = *px / sim.c;
-                let rand: f32 = rng.sample(Standard);
+                let rand: Float = rng.sample(Standard);
                 if -beta_inj * ux > rand * *psa {
                     ux *= -1.
                 }
@@ -993,31 +970,31 @@ impl Prtl {
 
         let csqinv = 1. / (sim.c * sim.c);
         // for the weights
-        let mut w00: f32;
-        let mut w01: f32;
-        let mut w02: f32;
-        let mut w10: f32;
-        let mut w11: f32;
-        let mut w12: f32;
-        let mut w20: f32;
-        let mut w21: f32;
-        let mut w22: f32;
+        let mut w00: Float;
+        let mut w01: Float;
+        let mut w02: Float;
+        let mut w10: Float;
+        let mut w11: Float;
+        let mut w12: Float;
+        let mut w20: Float;
+        let mut w21: Float;
+        let mut w22: Float;
 
-        let mut ext: f32;
-        let mut eyt: f32;
-        let mut ezt: f32;
-        let mut bxt: f32;
-        let mut byt: f32;
-        let mut bzt: f32;
-        let mut ux: f32;
-        let mut uy: f32;
-        let mut uz: f32;
-        let mut uxt: f32;
-        let mut uyt: f32;
-        let mut uzt: f32;
-        let mut pt: f32;
-        let mut gt: f32;
-        let mut boris: f32;
+        let mut ext: Float;
+        let mut eyt: Float;
+        let mut ezt: Float;
+        let mut bxt: Float;
+        let mut byt: Float;
+        let mut bzt: Float;
+        let mut ux: Float;
+        let mut uy: Float;
+        let mut uz: Float;
+        let mut uxt: Float;
+        let mut uyt: Float;
+        let mut uzt: Float;
+        let mut pt: Float;
+        let mut gt: Float;
+        let mut boris: Float;
 
         for (ix, iy, dx, dy, px, py, pz, psa) in izip!(
             &self.ix,

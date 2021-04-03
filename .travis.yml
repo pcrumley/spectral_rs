@@ -3,5 +3,6 @@ before_script:
 - rustup component add rustfmt
 script:
 - cargo build
+- cargo build --features dprec
 # - cargo test
 - cargo fmt -- --check
