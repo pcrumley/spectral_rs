@@ -458,7 +458,6 @@ impl Flds {
             &mut self.cmp_wrkspace,
             &mut self.fft_x_buf,
             &mut self.fft_y_buf,
-
         );
         Flds::fft2d(
             self.fft_x.clone(),
@@ -468,7 +467,7 @@ impl Flds {
             &mut self.cmp_wrkspace,
             &mut self.fft_x_buf,
             &mut self.fft_y_buf,
-       );
+        );
 
         // copy previous timestep should maybe use memcopy
         for (b2, br) in self.b_x2.iter_mut().zip(self.b_xr.iter()) {
