@@ -176,7 +176,7 @@ pub fn run(cfg: Config) -> Result<()> {
             sim.calc_density(prtl, &mut flds);
         }
 
-        // let sim.t = t;
+        sim.t.set(t);
     }
     /*
     if cfg.output.track_prtls {
@@ -207,14 +207,13 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
             wrkspace[i - 1] = wrkspace[i + sim.size_x];
             wrkspace[i + sim.size_x + 1] = wrkspace[i];
         }
-        // handle the ghost zones in y direction
-        // I COULD DO THIS WITH MEMCPY AND I KNOW IT IS POSSIBLE WITH SAFE
-        // RUST BUT I DON'T KNOW HOW :(
 
+        // handle the ghost zones in y direction
         for j in 0..sim.size_x + 2 {
             wrkspace[j] = wrkspace[sim.size_y * sim.size_x + j];
             wrkspace[(sim.size_y + 1) * sim.size_x + j] = wrkspace[sim.size_x + j];
         }
+
         // NOW FILTER IN Y-DIRECTION AND PUT VALS IN in_vec
         for i in ((sim.size_x + 2)..(sim.size_y + 1) * (sim.size_x + 2)).step_by(sim.size_x + 2) {
             for j in 1..sim.size_x + 1 {
@@ -232,10 +231,8 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
             in_vec[i - 1] = in_vec[i + sim.size_x];
             in_vec[i + sim.size_x + 1] = in_vec[i];
         }
-        // handle the ghost zones in y direction
-        // I COULD DO THIS WITH MEMCPY AND I KNOW IT IS POSSIBLE WITH SAFE
-        // RUST BUT I DON'T KNOW HOW :(
 
+        // handle the ghost zones in y direction
         for j in 0..sim.size_x + 2 {
             in_vec[j] = in_vec[sim.size_y * sim.size_x + j];
             in_vec[(sim.size_y + 1) * sim.size_x + j] = in_vec[sim.size_x + j];
@@ -243,7 +240,9 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
     }
 }
 struct Flds {
-    e_x: Vec<Float>,
+    // The struct that holds all the fields.
+    // First off is all the regular fields.
+    e_x: Vec<Float>, // Using 1D vectors instead of 2D arrays speed
     e_y: Vec<Float>,
     e_z: Vec<Float>,
     b_x: Vec<Float>,
@@ -278,12 +277,9 @@ struct Flds {
 }
 impl Flds {
     fn new(sim: &Sim) -> Flds {
-        //let Bnorm = 0Float;
+        // let Bnorm = 0Float;
         let mut planner = FftPlanner::new();
-        //let () = planner;
         let mut inv_planner = FftPlanner::new();
-        //let mut input:  Vec<Complex<Float>> = vec![Complex::zero(); sim.size_x];
-        //let mut output: Vec<Complex<Float>> = vec![Complex::zero();  sim.size_x];
 
         let fft_x = planner.plan_fft_forward(sim.size_x);
         let ifft_x = inv_planner.plan_fft_inverse(sim.size_x);
@@ -482,9 +478,7 @@ impl Flds {
     }
 }
 struct Sim {
-    // flds: Flds,
-    // prtls: Vec<Prtl>,
-    t: u32,
+    t: std::cell::Cell<u32>,
     t_final: u32,
     size_x: usize,
     size_y: usize,
@@ -500,7 +494,7 @@ struct Sim {
 impl Sim {
     fn new(cfg: &Config) -> Sim {
         Sim {
-            t: 0,
+            t: std::cell::Cell::new(0),
             t_final: cfg.setup.t_final,
             size_x: cfg.params.size_x,
             size_y: cfg.params.size_y,
@@ -518,11 +512,31 @@ impl Sim {
 
     fn deposit_current(&self, prtl: &Prtl, flds: &mut Flds) {
         // local vars we will use
+
+        // The [i,j] position in the array. Slightly complicated because
+        // Using a 1d vec to represent 2D array for speed.
+        // Here is the layout if it were a 2d array
+        // --------------------------------
+        // | ijm1 - 1 |  ijm1  | ijm1 + 1 |
+        // --------------------------------
+        // |  ij - 1  |   ij   |  ij + 1  |
+        // --------------------------------
+        // | ijp1 - 1 |  ijp1  | ijp1 + 1 |
+        // --------------------------------
+
         let mut ij: usize;
         let mut ijm1: usize;
         let mut ijp1: usize;
 
-        // for the weights
+        // Similarly for the weights
+        // -------------------
+        // | w00 | w01 | w02 |
+        // -------------------
+        // | w10 | w11 | w12 |
+        // -------------------
+        // | w20 | w21 | w22 |
+        // -------------------
+
         let mut w00: Float;
         let mut w01: Float;
         let mut w02: Float;
@@ -541,15 +555,12 @@ impl Sim {
         for (ix, iy, dx, dy, px, py, pz, psa) in
             izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy, &prtl.px, &prtl.py, &prtl.pz, &prtl.psa)
         {
+            // to ensure ijm1 doesn't underflow
+            assert!(*iy > 0);
             ijm1 = iy - 1;
             ijp1 = iy + 1;
-            //if ix1 >= *SIZE_X {
-            //    ix1 -= *SIZE_X;
-            //    ix2 -= *SIZE_X;
-            //} else if ix2 >= *SIZE_X {
-            //    ix2 -= *SIZE_X;
-            //}
-            ij = iy * (2 + self.size_x);
+
+            ij = iy * (2 + self.size_x); // 2 because 1 ghost zone on each side
             ijm1 *= 2 + self.size_x;
             ijp1 *= 2 + self.size_x;
             psa_inv = psa.powi(-1);
@@ -558,26 +569,21 @@ impl Sim {
             vz = prtl.charge * pz * psa_inv;
             // CALC WEIGHTS
             // 2nd order
-            // The weighting scheme prtl is in middle
-            // # ----------------------
-            // # | w0,0 | w0,1 | w0,2 |
-            // # ----------------------
-            // # | w1,0 | w1,1 | w1,2 |
-            // # ----------------------
-            // # | w2,0 | w2,1 | w2,2 |
-            // # ----------------------
-            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
-            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
-            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
-            w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
-            w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
-            w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
-            w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx); // y0
-            w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
+            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx);
+            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
+            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+            w11 = (0.75 - dy * dy) * (0.75 - dx * dx);
+            w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
+            w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+            w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx);
+            w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
 
             // Deposit the CURRENT
             if cfg!(feature = "unsafe") {
+                // Safe because we will assert that ijp1 + ix + 1 < len(flds.j_x)
+                assert!(ijp1 + ix + 1 < flds.j_x.len());
+
                 unsafe {
                     *flds.j_x.get_unchecked_mut(ijm1 + ix - 1) += w00 * vx;
                     *flds.j_x.get_unchecked_mut(ijm1 + ix) += w01 * vx;
@@ -661,6 +667,7 @@ impl Sim {
         let mut w22: Float;
 
         for (ix, iy, dx, dy) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy) {
+            assert!(*iy > 0);
             ijm1 = iy - 1;
             ijp1 = iy + 1;
             //if ix1 >= *SIZE_X {
@@ -693,8 +700,11 @@ impl Sim {
             w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx); // y0
             w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
 
-            // Deposit the CURRENT
+            // Deposit the density
             if cfg!(feature = "unsafe") {
+                // safe because following assertion
+                assert!(ijp1 + ix + 1 < flds.dsty.len());
+
                 unsafe {
                     *flds.dsty.get_unchecked_mut(ijm1 + ix - 1) += w00 * prtl.charge;
                     *flds.dsty.get_unchecked_mut(ijm1 + ix) += w01 * prtl.charge;
@@ -908,8 +918,8 @@ impl Prtl {
                         // self.y[c1+k]= r2 + (i as Float);
 
                         // UNIFORM OPT
-                        self.iy[c1 + k] = i + 1;
-                        self.ix[c1 + k] = j + 1;
+                        self.iy[c1 + k] = i + 1; // +1 for ghost zone
+                        self.ix[c1 + k] = j + 1; // +1 for ghost zone
 
                         let mut r1 = 1.0 / (2.0 * (sim.dens as Float));
                         r1 = (2. * (k as Float) + 1.) * r1;
@@ -937,7 +947,6 @@ impl Prtl {
         //        c1+=dens
     }
     fn initialize_velocities(&mut self, sim: &Sim) {
-        //placeholder
         let csqinv = 1. / (sim.c * sim.c);
         let beta_inj = -Float::sqrt(1. - sim.gamma_inj.powi(-2));
         // println!("{}", beta_inj);
@@ -1018,6 +1027,7 @@ impl Prtl {
             &mut self.pz,
             &mut self.psa
         ) {
+            assert!(*iy > 0);
             ijm1 = iy - 1;
             ijp1 = iy + 1;
             ij = iy * (2 + sim.size_x);
@@ -1026,25 +1036,27 @@ impl Prtl {
             // CALC WEIGHTS
             // 2nd order
             // The weighting scheme prtl is in middle
-            // # ----------------------
-            // # | w0,0 | w0,1 | w0,2 |
-            // # ----------------------
-            // # | w1,0 | w1,1 | w1,2 |
-            // # ----------------------
-            // # | w2,0 | w2,1 | w2,2 |
-            // # ----------------------
-            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
-            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
-            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
-            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
-            w11 = (0.75 - dy * dy) * (0.75 - dx * dx); // y0
-            w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
-            w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
-            w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx); // y0
-            w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
+            // -------------------
+            // | w00 | w01 | w02 |
+            // -------------------
+            // | w10 | w11 | w12 |
+            // -------------------
+            // | w20 | w21 | w22 |
+            // -------------------
+            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx);
+            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
+            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+            w11 = (0.75 - dy * dy) * (0.75 - dx * dx);
+            w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
+            w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+            w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx);
+            w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
 
             // INTERPOLATE ALL THE FIELDS
             if cfg!(feature = "unsafe") {
+                // safe because of following assertion
+                assert!(ijp1 + ix + 1 < flds.e_x.len());
                 unsafe {
                     ext = w00 * flds.e_x.get_unchecked(ijm1 + ix - 1);
                     ext += w01 * flds.e_x.get_unchecked(ijm1 + ix);
