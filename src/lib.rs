@@ -161,7 +161,7 @@ pub fn run(cfg: Config) -> Result<()> {
             sim.move_and_deposit(prtl, &mut flds);
         }
 
-        // solve field. This part is finished
+        // solve field. This part is NOT finished
         println!("solving fields");
         flds.update(&sim);
 
@@ -301,10 +301,10 @@ impl Flds {
             k_x: vec![0.0; sim.size_x],
             k_y: vec![0.0; sim.size_y],
             k_norm: vec![0.0; sim.size_y * sim.size_x],
-            fft_x: fft_x,
-            ifft_x: ifft_x,
-            fft_y: fft_y,
-            ifft_y: ifft_y,
+            fft_x,
+            ifft_x,
+            fft_y,
+            ifft_y,
             fft_x_buf: xscratch,
             fft_y_buf: yscratch,
             real_wrkspace_ghosts: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
@@ -369,9 +369,7 @@ impl Flds {
 
     pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<Float>>, out_fld: &mut Vec<Complex<Float>>) {
         // check to make sure the two vecs are the same size
-        if cfg!(feature = "unchecked") {
-            ();
-        } else {
+        if !cfg!(feature = "unchecked") {
             assert!(in_fld.len() == out_fld.len());
             assert!(sim.size_y * sim.size_x == in_fld.len());
         }
@@ -431,10 +429,7 @@ impl Flds {
         // copy j_x, j_y, j_z, dsty into complex vector
         let mut ij: usize;
         let mut ij_ghosts: usize;
-        if cfg!(feature = "unchecked") {
-            ()
-        } else {
-            println!("Is checked");
+        if !cfg!(feature = "unchecked") {
             assert!(self.c_x.len() == sim.size_x * sim.size_y);
             assert!(self.c_x.len() == self.c_y.len());
             assert!(self.c_y.len() == self.c_z.len());
@@ -502,6 +497,8 @@ impl Flds {
         for (b2, br) in self.b_z2.iter_mut().zip(self.b_zr.iter()) {
             *b2 = *br;
         }
+
+        // Take fft of electric fields
     }
 }
 struct Sim {
@@ -583,7 +580,10 @@ impl Sim {
             izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy, &prtl.px, &prtl.py, &prtl.pz, &prtl.psa)
         {
             // to ensure ijm1 doesn't underflow
-            assert!(*iy > 0);
+            if !cfg!(feature = "uchecked") {
+                assert!(*iy > 0);
+                assert!(*ix > 0);
+            }
             ijm1 = iy - 1;
             ijp1 = iy + 1;
 
@@ -697,7 +697,10 @@ impl Sim {
         let mut w22: Float;
 
         for (ix, iy, dx, dy) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy) {
-            assert!(*iy > 0);
+            if !cfg!(feature = "unchecked") {
+                assert!(*iy > 0);
+                assert!(*ix > 0);
+            }
             ijm1 = iy - 1;
             ijp1 = iy + 1;
             //if ix1 >= *SIZE_X {
@@ -731,22 +734,25 @@ impl Sim {
             w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
 
             // Deposit the density
-            if cfg!(feature = "unsafe") {
+            if !cfg!(feature = "unchecked") {
                 // safe because following assertion
                 assert!(ijp1 + ix + 1 < flds.dsty.len());
+            }
+            unsafe {
+                *flds.dsty.get_unchecked_mut(ijm1 + ix - 1) += w00 * prtl.charge;
+                *flds.dsty.get_unchecked_mut(ijm1 + ix) += w01 * prtl.charge;
+                *flds.dsty.get_unchecked_mut(ijm1 + ix + 1) += w02 * prtl.charge;
+                *flds.dsty.get_unchecked_mut(ij + ix - 1) += w10 * prtl.charge;
+                *flds.dsty.get_unchecked_mut(ij + ix) += w11 * prtl.charge;
+                *flds.dsty.get_unchecked_mut(ij + ix + 1) += w12 * prtl.charge;
+                *flds.dsty.get_unchecked_mut(ijp1 + ix - 1) += w20 * prtl.charge;
+                *flds.dsty.get_unchecked_mut(ijp1 + ix) += w21 * prtl.charge;
+                *flds.dsty.get_unchecked_mut(ijp1 + ix + 1) += w22 * prtl.charge;
+            }
+            /*
+             * bounds checked version. not needed because of asssert above
 
-                unsafe {
-                    *flds.dsty.get_unchecked_mut(ijm1 + ix - 1) += w00 * prtl.charge;
-                    *flds.dsty.get_unchecked_mut(ijm1 + ix) += w01 * prtl.charge;
-                    *flds.dsty.get_unchecked_mut(ijm1 + ix + 1) += w02 * prtl.charge;
-                    *flds.dsty.get_unchecked_mut(ij + ix - 1) += w10 * prtl.charge;
-                    *flds.dsty.get_unchecked_mut(ij + ix) += w11 * prtl.charge;
-                    *flds.dsty.get_unchecked_mut(ij + ix + 1) += w12 * prtl.charge;
-                    *flds.dsty.get_unchecked_mut(ijp1 + ix - 1) += w20 * prtl.charge;
-                    *flds.dsty.get_unchecked_mut(ijp1 + ix) += w21 * prtl.charge;
-                    *flds.dsty.get_unchecked_mut(ijp1 + ix + 1) += w22 * prtl.charge;
-                }
-            } else {
+
                 flds.dsty[ijm1 + ix - 1] += w00 * prtl.charge;
                 flds.dsty[ijm1 + ix] += w01 * prtl.charge;
                 flds.dsty[ijm1 + ix + 1] += w02 * prtl.charge;
@@ -756,7 +762,7 @@ impl Sim {
                 flds.dsty[ijp1 + ix - 1] += w20 * prtl.charge;
                 flds.dsty[ijp1 + ix] += w21 * prtl.charge;
                 flds.dsty[ijp1 + ix + 1] += w22 * prtl.charge;
-            }
+            */
         }
     }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
@@ -771,6 +777,11 @@ impl Sim {
             &prtl.py,
             &prtl.psa
         ) {
+            if !cfg!(feature = "unchecked") {
+                // check that we don't underflow
+                assert!(*ix > 0);
+                assert!(*iy > 0);
+            }
             c1 = 0.5 * self.dt * psa.powi(-1);
             *dx += c1 * px;
             if *dx >= 0.5 {
@@ -805,6 +816,11 @@ impl Sim {
             &prtl.py,
             &prtl.psa
         ) {
+            if !cfg!(feature = "unchecked") {
+                // check that we don't underflow
+                assert!(*ix > 0);
+                assert!(*iy > 0);
+            }
             c1 = 0.5 * self.dt * psa.powi(-1);
             *dx += c1 * px;
             if *dx >= 0.5 {
@@ -850,6 +866,10 @@ struct Prtl {
 fn _fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: Float, dy: Float, fld: &Vec<Float>) -> Float {
     // this function has been replaced with a fully inline one for
     // performance reasons. Leaving here for historical reasons.
+    if !cfg!(feature = "unchecked") {
+        //avoid underflow
+        assert!(iy > 0);
+    }
     let ijm1 = (iy - 1) * (sim.size_x + 2) + ix;
     let ij = iy * (sim.size_x + 2) + ix;
     let ijp1 = (iy + 1) * (sim.size_x + 2) + ix;
@@ -892,10 +912,10 @@ impl Prtl {
             psa: vec![0.0; sim.prtl_num],
             track: vec![false; sim.prtl_num],
             tag: vec![0u64; sim.prtl_num],
-            charge: charge,
-            vth: vth,
-            alpha: alpha,
-            beta: beta,
+            charge,
+            vth,
+            alpha,
+            beta,
         };
         prtl.track[40] = true;
         prtl.initialize_positions(sim);
@@ -1045,7 +1065,7 @@ impl Prtl {
         let mut uxt: Float;
         let mut uyt: Float;
         let mut uzt: Float;
-        let mut pt: Float;
+        // let mut pt: Float;
         let mut gt: Float;
         let mut boris: Float;
 
@@ -1059,7 +1079,10 @@ impl Prtl {
             &mut self.pz,
             &mut self.psa
         ) {
-            assert!(*iy > 0);
+            if !cfg!(feature = "unchecked") {
+                assert!(*iy > 0);
+                assert!(*ix > 0);
+            }
             ijm1 = iy - 1;
             ijp1 = iy + 1;
             ij = iy * (2 + sim.size_x);
@@ -1086,70 +1109,74 @@ impl Prtl {
             w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
 
             // INTERPOLATE ALL THE FIELDS
-            if cfg!(feature = "unsafe") {
-                // safe because of following assertion
+            if !cfg!(feature = "unchecked") {
                 assert!(ijp1 + ix + 1 < flds.e_x.len());
-                unsafe {
-                    ext = w00 * flds.e_x.get_unchecked(ijm1 + ix - 1);
-                    ext += w01 * flds.e_x.get_unchecked(ijm1 + ix);
-                    ext += w02 * flds.e_x.get_unchecked(ijm1 + ix + 1);
-                    ext += w10 * flds.e_x.get_unchecked(ij + ix - 1);
-                    ext += w11 * flds.e_x.get_unchecked(ij + ix);
-                    ext += w12 * flds.e_x.get_unchecked(ij + ix + 1);
-                    ext += w20 * flds.e_x.get_unchecked(ijp1 + ix - 1);
-                    ext += w21 * flds.e_x.get_unchecked(ijp1 + ix);
-                    ext += w22 * flds.e_x.get_unchecked(ijp1 + ix + 1);
+            }
+            // safe because of following assertion
 
-                    eyt = w00 * flds.e_y.get_unchecked(ijm1 + ix - 1);
-                    eyt += w01 * flds.e_y.get_unchecked(ijm1 + ix);
-                    eyt += w02 * flds.e_y.get_unchecked(ijm1 + ix + 1);
-                    eyt += w10 * flds.e_y.get_unchecked(ij + ix - 1);
-                    eyt += w11 * flds.e_y.get_unchecked(ij + ix);
-                    eyt += w12 * flds.e_y.get_unchecked(ij + ix + 1);
-                    eyt += w20 * flds.e_y.get_unchecked(ijp1 + ix - 1);
-                    eyt += w21 * flds.e_y.get_unchecked(ijp1 + ix);
-                    eyt += w22 * flds.e_y.get_unchecked(ijp1 + ix + 1);
+            unsafe {
+                ext = w00 * flds.e_x.get_unchecked(ijm1 + ix - 1);
+                ext += w01 * flds.e_x.get_unchecked(ijm1 + ix);
+                ext += w02 * flds.e_x.get_unchecked(ijm1 + ix + 1);
+                ext += w10 * flds.e_x.get_unchecked(ij + ix - 1);
+                ext += w11 * flds.e_x.get_unchecked(ij + ix);
+                ext += w12 * flds.e_x.get_unchecked(ij + ix + 1);
+                ext += w20 * flds.e_x.get_unchecked(ijp1 + ix - 1);
+                ext += w21 * flds.e_x.get_unchecked(ijp1 + ix);
+                ext += w22 * flds.e_x.get_unchecked(ijp1 + ix + 1);
 
-                    ezt = w00 * flds.e_z.get_unchecked(ijm1 + ix - 1);
-                    ezt += w01 * flds.e_z.get_unchecked(ijm1 + ix);
-                    ezt += w02 * flds.e_z.get_unchecked(ijm1 + ix + 1);
-                    ezt += w10 * flds.e_z.get_unchecked(ij + ix - 1);
-                    ezt += w11 * flds.e_z.get_unchecked(ij + ix);
-                    ezt += w12 * flds.e_z.get_unchecked(ij + ix + 1);
-                    ezt += w20 * flds.e_z.get_unchecked(ijp1 + ix - 1);
-                    ezt += w21 * flds.e_z.get_unchecked(ijp1 + ix);
-                    ezt += w22 * flds.e_z.get_unchecked(ijp1 + ix + 1);
+                eyt = w00 * flds.e_y.get_unchecked(ijm1 + ix - 1);
+                eyt += w01 * flds.e_y.get_unchecked(ijm1 + ix);
+                eyt += w02 * flds.e_y.get_unchecked(ijm1 + ix + 1);
+                eyt += w10 * flds.e_y.get_unchecked(ij + ix - 1);
+                eyt += w11 * flds.e_y.get_unchecked(ij + ix);
+                eyt += w12 * flds.e_y.get_unchecked(ij + ix + 1);
+                eyt += w20 * flds.e_y.get_unchecked(ijp1 + ix - 1);
+                eyt += w21 * flds.e_y.get_unchecked(ijp1 + ix);
+                eyt += w22 * flds.e_y.get_unchecked(ijp1 + ix + 1);
 
-                    bxt = w00 * flds.b_x.get_unchecked(ijm1 + ix - 1);
-                    bxt += w01 * flds.b_x.get_unchecked(ijm1 + ix);
-                    bxt += w02 * flds.b_x.get_unchecked(ijm1 + ix + 1);
-                    bxt += w10 * flds.b_x.get_unchecked(ij + ix - 1);
-                    bxt += w11 * flds.b_x.get_unchecked(ij + ix);
-                    bxt += w12 * flds.b_x.get_unchecked(ij + ix + 1);
-                    bxt += w20 * flds.b_x.get_unchecked(ijp1 + ix - 1);
-                    bxt += w21 * flds.b_x.get_unchecked(ijp1 + ix);
-                    bxt += w22 * flds.b_x.get_unchecked(ijp1 + ix + 1);
+                ezt = w00 * flds.e_z.get_unchecked(ijm1 + ix - 1);
+                ezt += w01 * flds.e_z.get_unchecked(ijm1 + ix);
+                ezt += w02 * flds.e_z.get_unchecked(ijm1 + ix + 1);
+                ezt += w10 * flds.e_z.get_unchecked(ij + ix - 1);
+                ezt += w11 * flds.e_z.get_unchecked(ij + ix);
+                ezt += w12 * flds.e_z.get_unchecked(ij + ix + 1);
+                ezt += w20 * flds.e_z.get_unchecked(ijp1 + ix - 1);
+                ezt += w21 * flds.e_z.get_unchecked(ijp1 + ix);
+                ezt += w22 * flds.e_z.get_unchecked(ijp1 + ix + 1);
 
-                    byt = w00 * flds.b_y.get_unchecked(ijm1 + ix - 1);
-                    byt += w01 * flds.b_y.get_unchecked(ijm1 + ix);
-                    byt += w02 * flds.b_y.get_unchecked(ijm1 + ix + 1);
-                    byt += w10 * flds.b_y.get_unchecked(ij + ix - 1);
-                    byt += w11 * flds.b_y.get_unchecked(ij + ix);
-                    byt += w12 * flds.b_y.get_unchecked(ij + ix + 1);
-                    byt += w20 * flds.b_y.get_unchecked(ijp1 + ix - 1);
-                    byt += w21 * flds.b_y.get_unchecked(ijp1 + ix);
-                    byt += w22 * flds.b_y.get_unchecked(ijp1 + ix + 1);
+                bxt = w00 * flds.b_x.get_unchecked(ijm1 + ix - 1);
+                bxt += w01 * flds.b_x.get_unchecked(ijm1 + ix);
+                bxt += w02 * flds.b_x.get_unchecked(ijm1 + ix + 1);
+                bxt += w10 * flds.b_x.get_unchecked(ij + ix - 1);
+                bxt += w11 * flds.b_x.get_unchecked(ij + ix);
+                bxt += w12 * flds.b_x.get_unchecked(ij + ix + 1);
+                bxt += w20 * flds.b_x.get_unchecked(ijp1 + ix - 1);
+                bxt += w21 * flds.b_x.get_unchecked(ijp1 + ix);
+                bxt += w22 * flds.b_x.get_unchecked(ijp1 + ix + 1);
 
-                    bzt = w00 * flds.b_z.get_unchecked(ijm1 + ix - 1);
-                    bzt += w01 * flds.b_z.get_unchecked(ijm1 + ix);
-                    bzt += w02 * flds.b_z.get_unchecked(ijm1 + ix + 1);
-                    bzt += w10 * flds.b_z.get_unchecked(ij + ix - 1);
-                    bzt += w11 * flds.b_z.get_unchecked(ij + ix);
-                    bzt += w12 * flds.b_z.get_unchecked(ij + ix + 1);
-                    bzt += w20 * flds.b_z.get_unchecked(ijp1 + ix - 1);
-                    bzt += w21 * flds.b_z.get_unchecked(ijp1 + ix);
-                    bzt += w22 * flds.b_z.get_unchecked(ijp1 + ix + 1);
-                }
+                byt = w00 * flds.b_y.get_unchecked(ijm1 + ix - 1);
+                byt += w01 * flds.b_y.get_unchecked(ijm1 + ix);
+                byt += w02 * flds.b_y.get_unchecked(ijm1 + ix + 1);
+                byt += w10 * flds.b_y.get_unchecked(ij + ix - 1);
+                byt += w11 * flds.b_y.get_unchecked(ij + ix);
+                byt += w12 * flds.b_y.get_unchecked(ij + ix + 1);
+                byt += w20 * flds.b_y.get_unchecked(ijp1 + ix - 1);
+                byt += w21 * flds.b_y.get_unchecked(ijp1 + ix);
+                byt += w22 * flds.b_y.get_unchecked(ijp1 + ix + 1);
+
+                bzt = w00 * flds.b_z.get_unchecked(ijm1 + ix - 1);
+                bzt += w01 * flds.b_z.get_unchecked(ijm1 + ix);
+                bzt += w02 * flds.b_z.get_unchecked(ijm1 + ix + 1);
+                bzt += w10 * flds.b_z.get_unchecked(ij + ix - 1);
+                bzt += w11 * flds.b_z.get_unchecked(ij + ix);
+                bzt += w12 * flds.b_z.get_unchecked(ij + ix + 1);
+                bzt += w20 * flds.b_z.get_unchecked(ijp1 + ix - 1);
+                bzt += w21 * flds.b_z.get_unchecked(ijp1 + ix);
+                bzt += w22 * flds.b_z.get_unchecked(ijp1 + ix + 1);
+            }
+            /* bounds checked verion. leaving for posterity
+
             } else {
                 ext = w00 * flds.e_x[ijm1 + ix - 1];
                 ext += w01 * flds.e_x[ijm1 + ix];
@@ -1211,7 +1238,7 @@ impl Prtl {
                 bzt += w21 * flds.b_z[ijp1 + ix];
                 bzt += w22 * flds.b_z[ijp1 + ix + 1];
             }
-
+            */
             ext *= self.beta;
             eyt *= self.beta;
             ezt *= self.beta;
