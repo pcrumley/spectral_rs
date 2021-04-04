@@ -146,32 +146,32 @@ pub fn run(cfg: Config) -> Result<()> {
             }
         }
         */
-        // Zero out currents
+
+        // Zero out currents and density
         println!("{}", t);
-        for (jx, jy, jz, dsty) in izip!(&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty)
-        {
-            *jx = 0.;
-            *jy = 0.;
-            *jz = 0.;
-            *dsty = 0.;
+        for prtl in &mut [&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty] {
+            for v in prtl.iter_mut() {
+                *v = 0.0;
+            }
         }
         println!("moving & dep prtl");
-        // deposit currents
+
+        // deposit current. This part is finished.
         for prtl in prtls.iter_mut() {
             sim.move_and_deposit(prtl, &mut flds);
         }
 
-        // solve field
+        // solve field. This part is finished
         println!("solving fields");
         flds.update(&sim);
 
-        // push prtls
+        // push prtls finished
         println!("pushing prtl");
         for prtl in prtls.iter_mut() {
-            prtl.boris_push(&sim, &flds);
+            prtl.boris_push(&sim, &flds)
         }
 
-        //calc Density
+        //calc Density. This part is finished
         for prtl in prtls.iter_mut() {
             sim.calc_density(prtl, &mut flds);
         }
@@ -322,6 +322,7 @@ impl Flds {
             dsty: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
             dsty_cmp: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
         };
+
         // Build the k basis of FFT
         for i in 0..f.k_x.len() {
             f.k_x[i] = i as Float;
@@ -344,6 +345,8 @@ impl Flds {
             }
         }
 
+        /* I HAVE NO IDEA WHY THIS IS HERE??? WHAT DOES IT MEAN??
+         * IGNORE BUT LEAVING IN CASE I REMEMBER
         if false {
             for i in 0..(sim.size_y + 2) {
                 //let tmp_b = 2.0 * Bnorm * (sim.size_y/2 - (i - 1))/(sim.size_y as Float);
@@ -360,22 +363,34 @@ impl Flds {
                 }
             }
         }
+        */
         f
     }
+
     pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<Float>>, out_fld: &mut Vec<Complex<Float>>) {
+        // check to make sure the two vecs are the same size
+        if cfg!(feature = "unchecked") {
+            ();
+        } else {
+            assert!(in_fld.len() == out_fld.len());
+            assert!(sim.size_y * sim.size_x == in_fld.len());
+        }
         for i in 0..sim.size_y {
             for j in 0..sim.size_x {
-                if cfg!(feature = "unsafe") {
-                    unsafe {
-                        *out_fld.get_unchecked_mut(i * sim.size_x + j) =
-                            *in_fld.get_unchecked(j * sim.size_y + i);
-                    }
-                } else {
-                    out_fld[i * sim.size_x + j] = in_fld[j * sim.size_y + i];
+                unsafe {
+                    // If you don't trust this unsafe section,
+                    // run the code with the checked feature
+                    // len(out_fld) == len(in_fld)
+                    // && size_y * size_x == len(out_fld)
+                    *out_fld.get_unchecked_mut(i * sim.size_x + j) =
+                        *in_fld.get_unchecked(j * sim.size_y + i);
                 }
+                // bounds checked version
+                // out_fld[i * sim.size_x + j] = in_fld[j * sim.size_y + i];
             }
         }
     }
+
     pub fn fft2d(
         fft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
         fft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
@@ -402,17 +417,29 @@ impl Flds {
         }
         Flds::transpose(sim, wrk_space, fld);
     }
+
     pub fn update(&mut self, sim: &Sim) {
         let ckc = sim.dt / sim.dens as Float;
         let cdt = sim.dt * sim.c as Float;
+
         // Filter fields
         binomial_filter_2_d(sim, &mut self.j_x, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.j_y, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.j_z, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.dsty, &mut self.real_wrkspace_ghosts);
+
         // copy j_x, j_y, j_z, dsty into complex vector
         let mut ij: usize;
         let mut ij_ghosts: usize;
+        if cfg!(feature = "unchecked") {
+            ()
+        } else {
+            println!("Is checked");
+            assert!(self.c_x.len() == sim.size_x * sim.size_y);
+            assert!(self.c_x.len() == self.c_y.len());
+            assert!(self.c_y.len() == self.c_z.len());
+            assert!(self.dsty_cmp.len() == self.c_z.len());
+        };
         for iy in 0..sim.size_y {
             ij = iy * (sim.size_x);
             ij_ghosts = (iy + 1) * (sim.size_x + 2);
@@ -580,42 +607,44 @@ impl Sim {
             w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
 
             // Deposit the CURRENT
-            if cfg!(feature = "unsafe") {
+            if !cfg!(feature = "unchecked") {
                 // Safe because we will assert that ijp1 + ix + 1 < len(flds.j_x)
+
                 assert!(ijp1 + ix + 1 < flds.j_x.len());
+            }
+            unsafe {
+                *flds.j_x.get_unchecked_mut(ijm1 + ix - 1) += w00 * vx;
+                *flds.j_x.get_unchecked_mut(ijm1 + ix) += w01 * vx;
+                *flds.j_x.get_unchecked_mut(ijm1 + ix + 1) += w02 * vx;
+                *flds.j_x.get_unchecked_mut(ij + ix - 1) += w10 * vx;
+                *flds.j_x.get_unchecked_mut(ij + ix) += w11 * vx;
+                *flds.j_x.get_unchecked_mut(ij + ix + 1) += w12 * vx;
+                *flds.j_x.get_unchecked_mut(ijp1 + ix - 1) += w20 * vx;
+                *flds.j_x.get_unchecked_mut(ijp1 + ix) += w21 * vx;
+                *flds.j_x.get_unchecked_mut(ijp1 + ix + 1) += w22 * vx;
 
-                unsafe {
-                    *flds.j_x.get_unchecked_mut(ijm1 + ix - 1) += w00 * vx;
-                    *flds.j_x.get_unchecked_mut(ijm1 + ix) += w01 * vx;
-                    *flds.j_x.get_unchecked_mut(ijm1 + ix + 1) += w02 * vx;
-                    *flds.j_x.get_unchecked_mut(ij + ix - 1) += w10 * vx;
-                    *flds.j_x.get_unchecked_mut(ij + ix) += w11 * vx;
-                    *flds.j_x.get_unchecked_mut(ij + ix + 1) += w12 * vx;
-                    *flds.j_x.get_unchecked_mut(ijp1 + ix - 1) += w20 * vx;
-                    *flds.j_x.get_unchecked_mut(ijp1 + ix) += w21 * vx;
-                    *flds.j_x.get_unchecked_mut(ijp1 + ix + 1) += w22 * vx;
+                *flds.j_y.get_unchecked_mut(ijm1 + ix - 1) += w00 * vy;
+                *flds.j_y.get_unchecked_mut(ijm1 + ix) += w01 * vy;
+                *flds.j_y.get_unchecked_mut(ijm1 + ix + 1) += w02 * vy;
+                *flds.j_y.get_unchecked_mut(ij + ix - 1) += w10 * vy;
+                *flds.j_y.get_unchecked_mut(ij + ix) += w11 * vy;
+                *flds.j_y.get_unchecked_mut(ij + ix + 1) += w12 * vy;
+                *flds.j_y.get_unchecked_mut(ijp1 + ix - 1) += w20 * vy;
+                *flds.j_y.get_unchecked_mut(ijp1 + ix) += w21 * vy;
+                *flds.j_y.get_unchecked_mut(ijp1 + ix + 1) += w22 * vy;
 
-                    *flds.j_y.get_unchecked_mut(ijm1 + ix - 1) += w00 * vy;
-                    *flds.j_y.get_unchecked_mut(ijm1 + ix) += w01 * vy;
-                    *flds.j_y.get_unchecked_mut(ijm1 + ix + 1) += w02 * vy;
-                    *flds.j_y.get_unchecked_mut(ij + ix - 1) += w10 * vy;
-                    *flds.j_y.get_unchecked_mut(ij + ix) += w11 * vy;
-                    *flds.j_y.get_unchecked_mut(ij + ix + 1) += w12 * vy;
-                    *flds.j_y.get_unchecked_mut(ijp1 + ix - 1) += w20 * vy;
-                    *flds.j_y.get_unchecked_mut(ijp1 + ix) += w21 * vy;
-                    *flds.j_y.get_unchecked_mut(ijp1 + ix + 1) += w22 * vy;
-
-                    *flds.j_z.get_unchecked_mut(ijm1 + ix - 1) += w00 * vz;
-                    *flds.j_z.get_unchecked_mut(ijm1 + ix) += w01 * vz;
-                    *flds.j_z.get_unchecked_mut(ijm1 + ix + 1) += w02 * vz;
-                    *flds.j_z.get_unchecked_mut(ij + ix - 1) += w10 * vz;
-                    *flds.j_z.get_unchecked_mut(ij + ix) += w11 * vz;
-                    *flds.j_z.get_unchecked_mut(ij + ix + 1) += w12 * vz;
-                    *flds.j_z.get_unchecked_mut(ijp1 + ix - 1) += w20 * vz;
-                    *flds.j_z.get_unchecked_mut(ijp1 + ix) += w21 * vz;
-                    *flds.j_z.get_unchecked_mut(ijp1 + ix + 1) += w22 * vz;
-                }
-            } else {
+                *flds.j_z.get_unchecked_mut(ijm1 + ix - 1) += w00 * vz;
+                *flds.j_z.get_unchecked_mut(ijm1 + ix) += w01 * vz;
+                *flds.j_z.get_unchecked_mut(ijm1 + ix + 1) += w02 * vz;
+                *flds.j_z.get_unchecked_mut(ij + ix - 1) += w10 * vz;
+                *flds.j_z.get_unchecked_mut(ij + ix) += w11 * vz;
+                *flds.j_z.get_unchecked_mut(ij + ix + 1) += w12 * vz;
+                *flds.j_z.get_unchecked_mut(ijp1 + ix - 1) += w20 * vz;
+                *flds.j_z.get_unchecked_mut(ijp1 + ix) += w21 * vz;
+                *flds.j_z.get_unchecked_mut(ijp1 + ix + 1) += w22 * vz;
+            }
+            /* Bounds checked version
+             *} else {
                 flds.j_x[ijm1 + ix - 1] += w00 * vx;
                 flds.j_x[ijm1 + ix] += w01 * vx;
                 flds.j_x[ijm1 + ix + 1] += w02 * vx;
@@ -646,6 +675,7 @@ impl Sim {
                 flds.j_z[ijp1 + ix] += w21 * vz;
                 flds.j_z[ijp1 + ix + 1] += w22 * vz;
             }
+            */
         }
     }
 
@@ -817,7 +847,9 @@ struct Prtl {
     tag: Vec<u64>,
     track: Vec<bool>,
 }
-fn fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: Float, dy: Float, fld: &Vec<Float>) -> Float {
+fn _fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: Float, dy: Float, fld: &Vec<Float>) -> Float {
+    // this function has been replaced with a fully inline one for
+    // performance reasons. Leaving here for historical reasons.
     let ijm1 = (iy - 1) * (sim.size_x + 2) + ix;
     let ij = iy * (sim.size_x + 2) + ix;
     let ijp1 = (iy + 1) * (sim.size_x + 2) + ix;
