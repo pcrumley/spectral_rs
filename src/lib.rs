@@ -535,7 +535,7 @@ impl Flds {
         binomial_filter_2_d(sim, &mut self.j_y.spatial, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.j_z.spatial, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.dsty.spatial, &mut self.real_wrkspace_ghosts);
-        
+
         // copy the flds to the complex arrays to perform ffts;
         self.copy_spatial_to_spectral(sim);
 
