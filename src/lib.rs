@@ -10,7 +10,7 @@ use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
 
-// We use a type alias for f64/Float to easily support
+// We use a type alias for f64, Float, to easily support
 // double and single precision.
 #[cfg(feature = "dprec")]
 type Float = f64;
@@ -32,6 +32,10 @@ pub struct Setup {
     pub t_final: u32,
 }
 
+pub struct Pos {
+    pub row: usize,
+    pub col: usize,
+}
 #[derive(Deserialize)]
 pub struct Output {
     pub track_prtls: bool,
@@ -450,6 +454,113 @@ impl Flds {
         */
         f
     }
+    #[inline(always)]
+    pub fn deposit_ghosts(sim: &Sim, fld: &mut Vec<Float>) -> () {
+        let size_x = sim.size_x;
+        let size_y = sim.size_y;
+        if !cfg!(feature = "unchecked") {
+            assert!(fld.len() == (size_x + 2) * (size_y * 2));
+        }
+        // deposit top ghost row into last row
+        let ghost_start = sim.spatial_get_index(Pos { row: 0, col: 1 });
+        let ghost_range = ghost_start..ghost_start + size_x + 1;
+        let real_start = sim.spatial_get_index(Pos {
+            row: sim.size_y,
+            col: 1,
+        });
+        let real_range = real_start..real_start + size_x + 1;
+        for (ighost, ireal) in ghost_range.zip(real_range) {
+            unsafe {
+                *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
+            }
+        }
+        // deposit bottom ghost row into top real row
+        let ghost_start = sim.spatial_get_index(Pos {
+            row: size_y,
+            col: 1,
+        });
+        let ghost_range = ghost_start..ghost_start + size_x + 1;
+        let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
+        let real_range = real_start..real_start + size_x + 1;
+        for (ighost, ireal) in ghost_range.zip(real_range) {
+            unsafe {
+                *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
+            }
+        }
+        // deposit left ghost columns into right real column
+        let ghost_start = sim.spatial_get_index(Pos { row: 1, col: 0 });
+        let ghost_end = sim.spatial_get_index(Pos {
+            row: 2 + size_y,
+            col: 0,
+        });
+        let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
+        let real_start = sim.spatial_get_index(Pos {
+            row: 1,
+            col: size_x,
+        });
+        let real_end = sim.spatial_get_index(Pos {
+            row: 2 + size_y,
+            col: size_x,
+        });
+        let real_range = (real_start..real_end).step_by(2 + size_x);
+        for (ighost, ireal) in ghost_range.zip(real_range) {
+            unsafe {
+                *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
+            }
+        }
+
+        // deposit right ghost columns into left real column
+        let ghost_start = sim.spatial_get_index(Pos {
+            row: 1,
+            col: size_x,
+        });
+        let ghost_end = sim.spatial_get_index(Pos {
+            row: 2 + size_y,
+            col: size_x,
+        });
+        let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
+        let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
+        let real_end = sim.spatial_get_index(Pos {
+            row: 2 + size_y,
+            col: 1,
+        });
+        let real_range = (real_start..real_end).step_by(2 + size_x);
+        for (ighost, ireal) in ghost_range.zip(real_range) {
+            unsafe {
+                *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
+            }
+        }
+        // now do the corners
+        // deposit top left into bottom right
+        let btm_right = sim.spatial_get_index(Pos {
+            row: size_y,
+            col: size_x,
+        });
+        unsafe { *fld.get_unchecked_mut(btm_right) += *fld.get_unchecked(0) }
+
+        // depost top right into bottom left
+        let btm_left = btm_right - size_x + 1;
+        unsafe { *fld.get_unchecked_mut(btm_left) += *fld.get_unchecked(size_x + 1) }
+
+        // depost bottom left into top right
+        let ghost_btm_left = sim.spatial_get_index(Pos {
+            row: size_y + 1,
+            col: 0,
+        });
+        let top_right = sim.spatial_get_index(Pos {
+            row: 1,
+            col: size_x,
+        });
+        unsafe { *fld.get_unchecked_mut(top_right) += *fld.get_unchecked(ghost_btm_left) }
+
+        // depost bottom right into top left
+        let ghost_btm_right = sim.spatial_get_index(Pos {
+            row: size_y + 1,
+            col: size_x + 1,
+        });
+        let top_left = sim.spatial_get_index(Pos { row: 1, col: 1 });
+        unsafe { *fld.get_unchecked_mut(top_left) += *fld.get_unchecked(ghost_btm_right) }
+    }
 
     pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<Float>>, out_fld: &mut Vec<Complex<Float>>) {
         // check to make sure the two vecs are the same size
@@ -597,6 +708,38 @@ impl Sim {
         }
     }
 
+    #[inline(always)]
+    fn spatial_get_index(&self, pos: Pos) -> usize {
+        // Convenience method to get a position in the array.
+        // Slightly complicated because
+        // Using a 1d vec to represent 2D array for speed.
+        // Here is the layout if it were a 2d array,
+        // with the 1D vec position in []
+        // ----------------------------------
+        // |   [0]    |   [1]    |   [2]    |
+        // |  row: 0  |  row: 0  |  row: 0  |
+        // |  col: 0  |  col: 1  |  col: 2  |
+        // |          |          |          |
+        // ----------------------------------
+        // |   [3]    |   [4]    |   [5]    |
+        // |  row: 1  |  row: 1  |  row: 1  |
+        // |  col: 0  |  col: 1  |  col: 2  |
+        // |          |          |          |
+        // ----------------------------------
+        // |   [6]    |   [7]    |   [8]    |
+        // |  row: 2  |  row: 2  |  row: 2  |
+        // |  col: 0  |  col: 1  |  col: 2  |
+        // |          |          |          |
+        // ----------------------------------
+
+        let row_len = self.size_x + 2;
+        if !cfg!(feature = "unchecked") {
+            assert!(pos.col < row_len);
+            assert!(pos.row < self.size_y + 2);
+        }
+        pos.row * row_len + pos.col
+    }
+
     fn deposit_current(&self, prtl: &Prtl, flds: &mut Flds) {
         // local vars we will use
 
@@ -639,6 +782,10 @@ impl Sim {
         let mut vz: Float;
         let mut psa_inv: Float;
 
+        let j_x = &mut flds.j_x.spatial;
+        let j_y = &mut flds.j_y.spatial;
+        let j_z = &mut flds.j_z.spatial;
+
         for (ix, iy, dx, dy, px, py, pz, psa) in
             izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy, &prtl.px, &prtl.py, &prtl.pz, &prtl.psa)
         {
@@ -670,9 +817,6 @@ impl Sim {
             w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
 
             // Deposit the CURRENT
-            let j_x = &mut flds.j_x.spatial;
-            let j_y = &mut flds.j_y.spatial;
-            let j_z = &mut flds.j_z.spatial;
             if !cfg!(feature = "unchecked") {
                 // Safe because we will assert that ijp1 + ix + 1 < len(flds.j_x)
 
@@ -743,6 +887,9 @@ impl Sim {
             }
             */
         }
+        Flds::deposit_ghosts(self, j_x);
+        Flds::deposit_ghosts(self, j_y);
+        Flds::deposit_ghosts(self, j_z);
     }
 
     fn calc_density(&self, prtl: &Prtl, flds: &mut Flds) {
@@ -762,6 +909,7 @@ impl Sim {
         let mut w21: Float;
         let mut w22: Float;
 
+        let dsty = &mut flds.dsty.spatial;
         for (ix, iy, dx, dy) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy) {
             if !cfg!(feature = "unchecked") {
                 assert!(*iy > 0);
@@ -799,7 +947,6 @@ impl Sim {
             w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx); // y0
             w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
 
-            let dsty = &mut flds.dsty.spatial;
             // Deposit the density
             if !cfg!(feature = "unchecked") {
                 // safe because following assertion
@@ -829,6 +976,7 @@ impl Sim {
                 dsty[ijp1 + ix + 1] += w22 * prtl.charge;
             */
         }
+        Flds::deposit_ghosts(self, dsty);
     }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
