@@ -645,7 +645,7 @@ impl Flds {
         self.copy_spatial_to_spectral(sim);
 
         // Take fft of currents
-        for current in &[
+        for current in &mut [
             &mut self.j_x.spectral,
             &mut self.j_y.spectral,
             &mut self.j_z.spectral,
@@ -655,7 +655,7 @@ impl Flds {
                 self.fft_x.clone(),
                 self.fft_y.clone(),
                 sim,
-                &mut self.j_x.spectral,
+                current,
                 &mut self.cmp_wrkspace,
                 &mut self.fft_x_buf,
                 &mut self.fft_y_buf,
@@ -663,7 +663,7 @@ impl Flds {
         }
 
         // copy previous timestep
-        for (b_copy, b_prev) in &[
+        for (b_copy, b_prev) in &mut [
             (&mut self.b_x2, &self.b_x.spectral),
             (&mut self.b_y2, &self.b_y.spectral),
             (&mut self.b_z2, &self.b_z.spectral),
