@@ -264,12 +264,12 @@ impl Flds {
         }
         // deposit top ghost row into last row
         let ghost_start = sim.spatial_get_index(Pos { row: 0, col: 1 });
-        let ghost_range = ghost_start..ghost_start + size_x + 1;
+        let ghost_range = ghost_start..ghost_start + size_x;
         let real_start = sim.spatial_get_index(Pos {
             row: sim.size_y,
             col: 1,
         });
-        let real_range = real_start..real_start + size_x + 1;
+        let real_range = real_start..real_start + size_x;
         for (ighost, ireal) in ghost_range.zip(real_range) {
             unsafe {
                 *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
@@ -277,12 +277,12 @@ impl Flds {
         }
         // deposit bottom ghost row into top real row
         let ghost_start = sim.spatial_get_index(Pos {
-            row: size_y,
+            row: size_y + 1,
             col: 1,
         });
-        let ghost_range = ghost_start..ghost_start + size_x + 1;
+        let ghost_range = ghost_start..ghost_start + size_x;
         let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
-        let real_range = real_start..real_start + size_x + 1;
+        let real_range = real_start..real_start + size_x;
         for (ighost, ireal) in ghost_range.zip(real_range) {
             unsafe {
                 *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
@@ -291,7 +291,7 @@ impl Flds {
         // deposit left ghost columns into right real column
         let ghost_start = sim.spatial_get_index(Pos { row: 1, col: 0 });
         let ghost_end = sim.spatial_get_index(Pos {
-            row: 2 + size_y,
+            row: 1 + size_y,
             col: 0,
         });
         let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
@@ -300,7 +300,7 @@ impl Flds {
             col: size_x,
         });
         let real_end = sim.spatial_get_index(Pos {
-            row: 2 + size_y,
+            row: 1 + size_y,
             col: size_x,
         });
         let real_range = (real_start..real_end).step_by(2 + size_x);
@@ -313,16 +313,16 @@ impl Flds {
         // deposit right ghost columns into left real column
         let ghost_start = sim.spatial_get_index(Pos {
             row: 1,
-            col: size_x,
+            col: size_x + 1,
         });
         let ghost_end = sim.spatial_get_index(Pos {
-            row: 2 + size_y,
-            col: size_x,
+            row: 1 + size_y,
+            col: size_x + 1,
         });
         let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
         let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
         let real_end = sim.spatial_get_index(Pos {
-            row: 2 + size_y,
+            row: 1 + size_y,
             col: 1,
         });
         let real_range = (real_start..real_end).step_by(2 + size_x);
@@ -340,7 +340,10 @@ impl Flds {
         unsafe { *fld.get_unchecked_mut(btm_right) += *fld.get_unchecked(0) }
 
         // depost top right into bottom left
-        let btm_left = btm_right - size_x + 1;
+        let btm_left = sim.spatial_get_index(Pos {
+            row: size_y,
+            col: 1,
+        });
         unsafe { *fld.get_unchecked_mut(btm_left) += *fld.get_unchecked(size_x + 1) }
 
         // depost bottom left into top right

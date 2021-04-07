@@ -2,9 +2,9 @@
 t_final = 1000
 
 [params]
-size_x = 2048
-size_y = 256
-delta = 64
+size_x = 24
+size_y = 12
+delta = 5
 dt = 0.1 # In units 1/omega_pe
 c = 3.0 # This is really c/omega_pe. Don't touch this.
 dens = 2   # of prtls per species per cell

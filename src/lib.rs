@@ -237,7 +237,7 @@ impl Sim {
     }
 
     #[inline(always)]
-    fn spatial_get_index(&self, pos: crate::flds::Pos) -> usize {
+    pub fn spatial_get_index(&self, pos: crate::flds::Pos) -> usize {
         // Convenience method to get a position in the array.
         // Slightly complicated because
         // Using a 1d vec to represent 2D array for speed.
@@ -256,7 +256,7 @@ impl Sim {
         // ----------------------------------
         // |   [6]    |   [7]    |   [8]    |
         // |  row: 2  |  row: 2  |  row: 2  |
-        // |  col: 0  |  col: 1  |  col: 2  |
+        // |  col: 1  |  col: 1  |  col: 2  |
         // |          |          |          |
         // ----------------------------------
 
