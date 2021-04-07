@@ -322,9 +322,6 @@ struct Flds {
     k_x: Vec<Float>,
     k_y: Vec<Float>,
     k_norm: Vec<Float>,
-    b_xr: Vec<Complex<Float>>,
-    b_yr: Vec<Complex<Float>>,
-    b_zr: Vec<Complex<Float>>,
     b_x2: Vec<Complex<Float>>,
     b_y2: Vec<Complex<Float>>,
     b_z2: Vec<Complex<Float>>,
@@ -405,9 +402,6 @@ impl Flds {
             real_wrkspace_ghosts: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
             real_wrkspace: vec![0.0; (sim.size_y) * (sim.size_x)],
             cmp_wrkspace: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            b_xr: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            b_yr: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            b_zr: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_x2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_y2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_z2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
@@ -511,9 +505,9 @@ impl Flds {
         self.j_x.copy_to_spectral(sim);
         self.j_y.copy_to_spectral(sim);
         self.j_z.copy_to_spectral(sim);
-        self.b_x.copy_to_spectral(sim);
-        self.b_y.copy_to_spectral(sim);
-        self.b_z.copy_to_spectral(sim);
+        // self.b_x.copy_to_spectral(sim);
+        // self.b_y.copy_to_spectral(sim);
+        // self.b_z.copy_to_spectral(sim);
         self.e_x.copy_to_spectral(sim);
         self.e_y.copy_to_spectral(sim);
         self.e_z.copy_to_spectral(sim);
@@ -540,54 +534,33 @@ impl Flds {
         self.copy_spatial_to_spectral(sim);
 
         // Take fft of currents
-        Flds::fft2d(
-            self.fft_x.clone(),
-            self.fft_y.clone(),
-            sim,
+        for current in &[
             &mut self.j_x.spectral,
-            &mut self.cmp_wrkspace,
-            &mut self.fft_x_buf,
-            &mut self.fft_y_buf,
-        );
-        Flds::fft2d(
-            self.fft_x.clone(),
-            self.fft_y.clone(),
-            sim,
             &mut self.j_y.spectral,
-            &mut self.cmp_wrkspace,
-            &mut self.fft_x_buf,
-            &mut self.fft_y_buf,
-        );
-        Flds::fft2d(
-            self.fft_x.clone(),
-            self.fft_y.clone(),
-            sim,
             &mut self.j_z.spectral,
-            &mut self.cmp_wrkspace,
-            &mut self.fft_x_buf,
-            &mut self.fft_y_buf,
-        );
-        Flds::fft2d(
-            self.fft_x.clone(),
-            self.fft_y.clone(),
-            sim,
             &mut self.dsty.spectral,
-            &mut self.cmp_wrkspace,
-            &mut self.fft_x_buf,
-            &mut self.fft_y_buf,
-        );
-        /*
-        // copy previous timestep should maybe use memcopy
-        for (b2, br) in self.b_x2.iter_mut().zip(self.b_xr.iter()) {
-            *b2 = *br;
+        ] {
+            Flds::fft2d(
+                self.fft_x.clone(),
+                self.fft_y.clone(),
+                sim,
+                &mut self.j_x.spectral,
+                &mut self.cmp_wrkspace,
+                &mut self.fft_x_buf,
+                &mut self.fft_y_buf,
+            );
         }
-        for (b2, br) in self.b_y2.iter_mut().zip(self.b_yr.iter()) {
-            *b2 = *br;
+
+        // copy previous timestep
+        for (b_copy, b_prev) in &[
+            (&mut self.b_x2, &self.b_x.spectral),
+            (&mut self.b_y2, &self.b_y.spectral),
+            (&mut self.b_z2, &self.b_z.spectral),
+        ] {
+            for (b2, br) in b_copy.iter_mut().zip(b_prev.iter()) {
+                *b2 = *br;
+            }
         }
-        for (b2, br) in self.b_z2.iter_mut().zip(self.b_zr.iter()) {
-            *b2 = *br;
-        }
-        */
         // Take fft of electric fields
     }
 }
