@@ -4,5 +4,5 @@ before_script:
 script:
 - cargo build
 - cargo build --features dprec
-# - cargo test
+- cargo test
 - cargo fmt -- --check

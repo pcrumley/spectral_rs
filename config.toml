@@ -17,4 +17,4 @@ track_interval = 10 # In timesteps
 write_output = true # save output tsteps
 output_interval = 1000 # In timesteps
 stride = 1 # Prtl downsampling
-#istep = 1 # Flds downsampling
+istep = 1 # Flds downsampling

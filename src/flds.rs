@@ -1,7 +1,6 @@
 use crate::{Float, Sim};
 const PI: Float = std::f64::consts::PI as Float;
 
-use anyhow::{Context, Result};
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;

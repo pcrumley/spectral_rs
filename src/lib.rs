@@ -1,4 +1,4 @@
-mod flds;
+pub mod flds;
 mod prtls;
 
 use flds::Flds;
@@ -11,10 +11,10 @@ use itertools::izip;
 // We use a type alias for f64, Float, to easily support
 // double and single precision.
 #[cfg(feature = "dprec")]
-type Float = f64;
+pub type Float = f64;
 
 #[cfg(not(feature = "dprec"))]
-type Float = f32;
+pub type Float = f32;
 
 #[derive(Deserialize)]
 pub struct Config {
@@ -35,6 +35,7 @@ pub struct Output {
     pub track_interval: u32,
     pub output_interval: u32,
     pub stride: usize,
+    pub istep: usize,
 }
 
 #[derive(Deserialize)]
@@ -203,21 +204,21 @@ pub fn run(cfg: Config) -> Result<()> {
 }
 
 pub struct Sim {
-    t: std::cell::Cell<u32>,
-    t_final: u32,
-    size_x: usize,
-    size_y: usize,
-    delta: usize,
-    dt: Float,
-    c: Float,
-    dens: u32,
-    gamma_inj: Float, // Speed of upstream flow
-    prtl_num: usize,  // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
-    n_pass: u8,       // = 4; //Number of filter passes
+    pub t: std::cell::Cell<u32>,
+    pub t_final: u32,
+    pub size_x: usize,
+    pub size_y: usize,
+    pub delta: usize,
+    pub dt: Float,
+    pub c: Float,
+    pub dens: u32,
+    pub gamma_inj: Float, // Speed of upstream flow
+    pub prtl_num: usize,  // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
+    pub n_pass: u8,       // = 4; //Number of filter passes
 }
 
 impl Sim {
-    fn new(cfg: &Config) -> Sim {
+    pub fn new(cfg: &Config) -> Sim {
         Sim {
             t: std::cell::Cell::new(0),
             t_final: cfg.setup.t_final,
