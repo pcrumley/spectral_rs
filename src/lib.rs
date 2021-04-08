@@ -415,6 +415,7 @@ impl Sim {
             }
             */
         }
+
         Flds::deposit_ghosts(self, j_x);
         Flds::deposit_ghosts(self, j_y);
         Flds::deposit_ghosts(self, j_z);

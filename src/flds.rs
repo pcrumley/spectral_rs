@@ -262,7 +262,7 @@ impl Flds {
         let size_x = sim.size_x;
         let size_y = sim.size_y;
         if !cfg!(feature = "unchecked") {
-            assert!(fld.len() == (size_x + 2) * (size_y * 2));
+            assert!(fld.len() == (size_x + 2) * (size_y + 2));
         }
         // Copy bottom row into top ghost row
         let ghost_start = sim.spatial_get_index(Pos { row: 0, col: 1 });
@@ -373,7 +373,7 @@ impl Flds {
         let size_x = sim.size_x;
         let size_y = sim.size_y;
         if !cfg!(feature = "unchecked") {
-            assert!(fld.len() == (size_x + 2) * (size_y * 2));
+            assert!(fld.len() == (size_x + 2) * (size_y + 2));
         }
         // deposit top ghost row into last row
         let ghost_start = sim.spatial_get_index(Pos { row: 0, col: 1 });

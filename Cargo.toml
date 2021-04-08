@@ -24,7 +24,7 @@ rustfft = "5.0.0"
 criterion = "0.2"
 
 [features]
-default = ["unchecked"]
+default = []
 unchecked = []
 dprec = [] 
 
