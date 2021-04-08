@@ -52,7 +52,6 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
         assert!(in_vec.len() == wrkspace.len());
         assert!(in_vec.len() == (sim.size_x + 2) * (sim.size_y + 2));
     }
-    let sim_size = in_vec.len();
 
     let weights: [Float; 3] = [0.25, 0.5, 0.25];
     // account for ghost zones
@@ -66,21 +65,9 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
                     .map(|(&w, &f)| w * f)
                     .sum::<Float>();
             }
-            // handle the ghost zones in x direction
-            wrkspace[i - 1] = wrkspace[i + sim.size_x];
-            wrkspace[i + sim.size_x + 1] = wrkspace[i];
         }
 
-        // handle the ghost zones in y direction
-        for j in 1..sim.size_x + 1 {
-            wrkspace[j] = wrkspace[sim.size_y * sim.size_x + j];
-            wrkspace[(sim.size_y + 1) * sim.size_x + j] = wrkspace[sim.size_x + j];
-        }
-        // handle ghost zones in the corners
-        wrkspace[0] = wrkspace[sim.size_y * (sim.size_x + 2) - 1];
-        wrkspace[sim_size - 1] = wrkspace[sim.size_x + 3];
-        wrkspace[sim_size - sim.size_x - 2] = wrkspace[2 * (sim.size_x + 2) - 1];
-        wrkspace[sim.size_x + 1] = wrkspace[(sim.size_y - 1) * (sim.size_x + 2)];
+        Flds::update_ghosts(&sim, wrkspace);
 
         // NOW FILTER IN Y-DIRECTION AND PUT VALS IN in_vec
         for i in ((sim.size_x + 2)..(sim.size_y + 1) * (sim.size_x + 2)).step_by(sim.size_x + 2) {
@@ -95,27 +82,15 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
                     .map(|(&w, &f)| w * f)
                     .sum::<Float>();
             }
-            // handle the ghost zones in x direction
-            in_vec[i - 1] = in_vec[i + sim.size_x];
-            in_vec[i + sim.size_x + 1] = in_vec[i];
         }
 
-        // handle the ghost zones in y direction
-        for j in 1..sim.size_x + 1 {
-            in_vec[j] = in_vec[sim.size_y * sim.size_x + j];
-            in_vec[(sim.size_y + 1) * sim.size_x + j] = in_vec[sim.size_x + j];
-        }
-        // handle ghost zones in the corners
-        in_vec[0] = in_vec[sim.size_y * (sim.size_x + 2) - 1];
-        in_vec[sim_size - 1] = in_vec[sim.size_x + 3];
-        in_vec[sim_size - sim.size_x - 2] = in_vec[2 * (sim.size_x + 2) - 1];
-        in_vec[sim.size_x + 1] = in_vec[(sim.size_y - 1) * (sim.size_x + 2)];
+        Flds::update_ghosts(&sim, in_vec);
     }
 }
 
 impl Fld {
     #[inline(always)]
-    fn copy_to_spectral(&mut self, sim: &Sim) -> () {
+    pub fn copy_to_spectral(&mut self, sim: &Sim) -> () {
         // assert stuff about ghost zones etc.
         let spatial = &self.spatial;
         let spectral = &mut self.spectral;
@@ -255,6 +230,118 @@ impl Flds {
         */
         f
     }
+
+    #[inline(always)]
+    pub fn update_ghosts(sim: &Sim, fld: &mut Vec<Float>) -> () {
+        let size_x = sim.size_x;
+        let size_y = sim.size_y;
+        if !cfg!(feature = "unchecked") {
+            assert!(fld.len() == (size_x + 2) * (size_y * 2));
+        }
+        // Copy bottom row into top ghost row
+        let ghost_start = sim.spatial_get_index(Pos { row: 0, col: 1 });
+        let ghost_range = ghost_start..ghost_start + size_x;
+        let real_start = sim.spatial_get_index(Pos {
+            row: sim.size_y,
+            col: 1,
+        });
+        let real_range = real_start..real_start + size_x;
+        for (ighost, ireal) in ghost_range.zip(real_range) {
+            unsafe {
+                *fld.get_unchecked_mut(ighost) = *fld.get_unchecked(ireal);
+            }
+        }
+        // Copy top row into bottom ghost row
+        let ghost_start = sim.spatial_get_index(Pos {
+            row: size_y + 1,
+            col: 1,
+        });
+        let ghost_range = ghost_start..ghost_start + size_x;
+        let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
+        let real_range = real_start..real_start + size_x;
+        for (ighost, ireal) in ghost_range.zip(real_range) {
+            unsafe {
+                *fld.get_unchecked_mut(ighost) = *fld.get_unchecked(ireal);
+            }
+        }
+        // copy into left ghost columns from right real column
+        let ghost_start = sim.spatial_get_index(Pos { row: 1, col: 0 });
+        let ghost_end = sim.spatial_get_index(Pos {
+            row: 1 + size_y,
+            col: 0,
+        });
+        let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
+        let real_start = sim.spatial_get_index(Pos {
+            row: 1,
+            col: size_x,
+        });
+        let real_end = sim.spatial_get_index(Pos {
+            row: 1 + size_y,
+            col: size_x,
+        });
+        let real_range = (real_start..real_end).step_by(2 + size_x);
+        for (ighost, ireal) in ghost_range.zip(real_range) {
+            unsafe {
+                *fld.get_unchecked_mut(ighost) = *fld.get_unchecked(ireal);
+            }
+        }
+
+        // copy into right ghost columns from left real column
+        let ghost_start = sim.spatial_get_index(Pos {
+            row: 1,
+            col: size_x + 1,
+        });
+        let ghost_end = sim.spatial_get_index(Pos {
+            row: 1 + size_y,
+            col: size_x + 1,
+        });
+        let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
+        let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
+        let real_end = sim.spatial_get_index(Pos {
+            row: 1 + size_y,
+            col: 1,
+        });
+        let real_range = (real_start..real_end).step_by(2 + size_x);
+        for (ighost, ireal) in ghost_range.zip(real_range) {
+            unsafe {
+                *fld.get_unchecked_mut(ighost) = *fld.get_unchecked(ireal);
+            }
+        }
+        // now do the corners
+        // copy into top left from bottom right
+        let btm_right = sim.spatial_get_index(Pos {
+            row: size_y,
+            col: size_x,
+        });
+        unsafe { *fld.get_unchecked_mut(0) = *fld.get_unchecked(btm_right) }
+
+        // copy into top right from bottom left
+        let btm_left = sim.spatial_get_index(Pos {
+            row: size_y,
+            col: 1,
+        });
+        unsafe { *fld.get_unchecked_mut(size_x + 1) = *fld.get_unchecked(btm_left) }
+
+        // copy into bottom left from top right
+        let ghost_btm_left = sim.spatial_get_index(Pos {
+            row: size_y + 1,
+            col: 0,
+        });
+        let top_right = sim.spatial_get_index(Pos {
+            row: 1,
+            col: size_x,
+        });
+        unsafe { *fld.get_unchecked_mut(ghost_btm_left) = *fld.get_unchecked(top_right) }
+
+        // Copy into bottom right from top left
+        let ghost_btm_right = sim.spatial_get_index(Pos {
+            row: size_y + 1,
+            col: size_x + 1,
+        });
+        let top_left = sim.spatial_get_index(Pos { row: 1, col: 1 });
+        unsafe { *fld.get_unchecked_mut(ghost_btm_right) = *fld.get_unchecked(top_left) }
+    }
+
     #[inline(always)]
     pub fn deposit_ghosts(sim: &Sim, fld: &mut Vec<Float>) -> () {
         let size_x = sim.size_x;
