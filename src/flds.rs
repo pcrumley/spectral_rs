@@ -1,6 +1,7 @@
 use crate::{Float, Sim};
 const PI: Float = std::f64::consts::PI as Float;
 
+use itertools::izip;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
@@ -550,9 +551,6 @@ impl Flds {
     }
 
     pub fn update(&mut self, sim: &Sim) {
-        let ckc = sim.dt / sim.dens as Float;
-        let cdt = sim.dt * sim.c as Float;
-
         // Filter currents and density fields
         binomial_filter_2_d(sim, &mut self.j_x.spatial, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.j_y.spatial, &mut self.real_wrkspace_ghosts);
@@ -579,7 +577,7 @@ impl Flds {
                 &mut self.fft_y_buf,
             );
         }
-        
+
         // clean k=0 contributions from currents
         self.j_x.spectral[0] = Complex::zero();
         self.j_y.spectral[0] = Complex::zero();
@@ -611,28 +609,71 @@ impl Flds {
                 &mut self.fft_y_buf,
             );
         }
- 
-        // push on electric field
-        // self.ex += 1j*self.rey*bz2-self.ckc*cx
-        // self.ey += -1j*self.rex*bz2-self.ckc*cy
-        // self.ez += 1j*self.rex*by2-1j*self.rey*bx2-self.ckc*cz
-        /*
-        #
-        # save k=0 components because impossible to apply correction
-        # (division by 0)
-        ex0=self.ex[0,0]
-        ey0=self.ey[0,0]
 
-        # Boris correction:
-        ex1=np.copy(self.ex)  # bidouille bizarre mais il faut
-        ey1=np.copy(self.ey)  # Tranlation -> weird hack but it works
-        self.ex = ex1-(self.kx*ex1+self.ky*ey1+1j*d1)*self.kx*self.norm1
-        self.ey = ey1-(self.kx*ex1+self.ky*ey1+1j*d1)*sel.ky*self.norm1
-        # restablish uncorrected longitudinal electric field...
-        # needed to conserve the contribution from motional electric field
-        # if upstream moving plasma carries magnetic frozen in field
-        self.ex[0,0] = ex0
-        self.ey[0,0] = ey0
-        */
+        // push on electric field
+        let ckc = sim.dt / sim.dens as Float;
+        let cdt = sim.dt * sim.c as Float;
+
+        for (e_x, k_y, b_z, j_x) in izip!(
+            &mut self.e_x.spectral,
+            &self.k_y,
+            &self.b_z2,
+            &self.j_x.spectral
+        ) {
+            *e_x += Complex::new(0.0, cdt) * k_y * b_z - ckc * j_x;
+        }
+
+        for (e_y, k_x, b_z, j_y) in izip!(
+            &mut self.e_y.spectral,
+            &self.k_x,
+            &self.b_z2,
+            &self.j_y.spectral
+        ) {
+            *e_y += Complex::new(0.0, -cdt) * k_x * b_z - ckc * j_y;
+        }
+
+        for (e_z, k_x, b_y, k_y, b_x, j_z) in izip!(
+            &mut self.e_z.spectral,
+            &self.k_x,
+            &self.b_y2,
+            &self.k_y,
+            &self.b_x2,
+            &self.j_z.spectral
+        ) {
+            *e_z += Complex::new(0.0, cdt) * (k_x * b_y - k_y * b_x);
+            *e_z -= ckc * j_z;
+        }
+
+        // save k=0 components because impossible to apply correction
+        // (division by 0)
+        let ex0 = self.e_x.spectral[0];
+        let ey0 = self.e_y.spectral[0];
+
+        // Boris correction:
+        // some helper vars we initialize. I don't know if it helps to do
+        // this outside of the loop in rust or not.
+
+        let mut tmp_ex: Complex<Float>;
+        let mut tmp_ey: Complex<Float>;
+
+        for (e_x, e_y, k_x, k_y, dsty, norm) in izip!(
+            &mut self.e_x.spectral,
+            &mut self.e_y.spectral,
+            &self.k_x,
+            &self.k_y,
+            &self.dsty.spectral,
+            &self.k_norm
+        ) {
+            tmp_ex = *e_x;
+            tmp_ey = *e_y;
+            *e_x -= (k_x * tmp_ex + k_y * tmp_ey + Complex::new(0., 1.) * dsty) * k_x * norm;
+        }
+        // self.ex = ex1-(self.kx*ex1+self.ky*ey1+1j*d1)*self.kx*self.norm1
+        // self.ey = ey1-(self.kx*ex1+self.ky*ey1+1j*d1)*sel.ky*self.norm1
+        // restablish uncorrected longitudinal electric field...
+        // needed to conserve the contribution from motional electric field
+        // if upstream moving plasma carries magnetic frozen in field
+        self.e_x.spectral[0] = ex0;
+        self.e_y.spectral[0] = ey0;
     }
 }
