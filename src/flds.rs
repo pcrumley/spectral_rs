@@ -31,9 +31,9 @@ pub struct Flds {
     k_x: Vec<Float>,
     k_y: Vec<Float>,
     k_norm: Vec<Float>,
-    b_x2: Vec<Complex<Float>>,
-    b_y2: Vec<Complex<Float>>,
-    b_z2: Vec<Complex<Float>>,
+    b_x_wrk: Vec<Complex<Float>>,
+    b_y_wrk: Vec<Complex<Float>>,
+    b_z_wrk: Vec<Complex<Float>>,
     fft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
     ifft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
     fft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
@@ -210,9 +210,9 @@ impl Flds {
             real_wrkspace_ghosts: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
             real_wrkspace: vec![0.0; (sim.size_y) * (sim.size_x)],
             cmp_wrkspace: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            b_x2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            b_y2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            b_z2: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_x_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            b_z_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
         };
 
         // Build the k basis of FFT
@@ -583,14 +583,16 @@ impl Flds {
         self.j_y.spectral[0] = Complex::zero();
         // No j_z???  why?
 
-        // copy previous timestep
-        for (b_copy, b_prev) in &mut [
-            (&mut self.b_x2, &self.b_x.spectral),
-            (&mut self.b_y2, &self.b_y.spectral),
-            (&mut self.b_z2, &self.b_z.spectral),
+        // wrkspace contains the b field on the minus
+        // half step spectral contains it as -1. We need to
+        // advance spectral by 1/2 time step
+        for (b_prev, b_prev_half) in &mut [
+            (&mut self.b_x.spectral, &self.b_x_wrk),
+            (&mut self.b_y.spectral, &self.b_y_wrk),
+            (&mut self.b_z.spectral, &self.b_z_wrk),
         ] {
-            for (b2, br) in b_copy.iter_mut().zip(b_prev.iter()) {
-                *b2 = *br;
+            for (vm1, vmhalf) in b_prev.iter_mut().zip(b_prev_half.iter()) {
+                *vm1 = *vmhalf;
             }
         }
         // Take fft of electric fields
@@ -617,8 +619,8 @@ impl Flds {
         for (e_x, k_y, b_z, j_x) in izip!(
             &mut self.e_x.spectral,
             &self.k_y,
-            &self.b_z2,
-            &self.j_x.spectral
+            &self.b_z.spectral,
+            &self.j_x.spectral,
         ) {
             *e_x += Complex::new(0.0, cdt) * k_y * b_z - ckc * j_x;
         }
@@ -626,8 +628,8 @@ impl Flds {
         for (e_y, k_x, b_z, j_y) in izip!(
             &mut self.e_y.spectral,
             &self.k_x,
-            &self.b_z2,
-            &self.j_y.spectral
+            &self.b_z.spectral,
+            &self.j_y.spectral,
         ) {
             *e_y += Complex::new(0.0, -cdt) * k_x * b_z - ckc * j_y;
         }
@@ -635,9 +637,9 @@ impl Flds {
         for (e_z, k_x, b_y, k_y, b_x, j_z) in izip!(
             &mut self.e_z.spectral,
             &self.k_x,
-            &self.b_y2,
+            &self.b_y.spectral,
             &self.k_y,
-            &self.b_x2,
+            &self.b_x.spectral,
             &self.j_z.spectral
         ) {
             *e_z += Complex::new(0.0, cdt) * (k_x * b_y - k_y * b_x);
@@ -653,8 +655,7 @@ impl Flds {
         // some helper vars we initialize. I don't know if it helps to do
         // this outside of the loop in rust or not.
 
-        let mut tmp_ex: Complex<Float>;
-        let mut tmp_ey: Complex<Float>;
+        let mut tmp: Complex<Float>;
 
         for (e_x, e_y, k_x, k_y, dsty, norm) in izip!(
             &mut self.e_x.spectral,
@@ -664,16 +665,85 @@ impl Flds {
             &self.dsty.spectral,
             &self.k_norm
         ) {
-            tmp_ex = *e_x;
-            tmp_ey = *e_y;
-            *e_x -= (k_x * tmp_ex + k_y * tmp_ey + Complex::new(0., 1.) * dsty) * k_x * norm;
+            tmp = (k_x * *e_x + k_y * *e_y + Complex::new(0., 1.) * dsty) * norm;
+            *e_x -= tmp * k_x;
+            *e_y -= tmp * k_y;
         }
-        // self.ex = ex1-(self.kx*ex1+self.ky*ey1+1j*d1)*self.kx*self.norm1
-        // self.ey = ey1-(self.kx*ex1+self.ky*ey1+1j*d1)*sel.ky*self.norm1
+
         // restablish uncorrected longitudinal electric field...
         // needed to conserve the contribution from motional electric field
         // if upstream moving plasma carries magnetic frozen in field
         self.e_x.spectral[0] = ex0;
         self.e_y.spectral[0] = ey0;
+
+        // push on wrkspace magnetic field with updated electric field. advance it to t + 1/2
+        // timestep
+        for (b_x, k_y, e_z) in izip!(&mut self.b_x_wrk, &self.k_y, &self.e_z.spectral) {
+            *b_x -= Complex::new(0.0, cdt) * k_y * e_z;
+        }
+        for (b_y, k_x, e_z) in izip!(&mut self.b_y_wrk, &self.k_x, &self.e_z.spectral) {
+            *b_y += Complex::new(0.0, cdt) * k_x * e_z;
+        }
+        for (b_z, k_x, k_y, e_x, e_y) in izip!(
+            &mut self.b_z_wrk,
+            &self.k_x,
+            &self.k_y,
+            &self.e_x.spectral,
+            &self.e_y.spectral
+        ) {
+            *b_z += Complex::new(0.0, cdt) * (k_y * e_x - k_x * e_y);
+        }
+
+        // Filter out the Nyquist frequency component, because it can cause
+        // spurious imaginary quantities to show up in real space.
+
+        // gonna do some unsafe code so need to have assert! here
+        if !cfg!(feature = "unchecked") {
+            let tot_cells = sim.size_x * sim.size_y;
+            for b_fld in &[&self.b_x_wrk, &self.b_y_wrk, &self.b_z_wrk] {
+                assert_eq!(tot_cells, b_fld.len());
+            }
+            for fld in &[&self.e_x, &self.e_y, &self.e_z] {
+                assert_eq!(tot_cells, fld.spectral.len());
+            }
+        }
+        let nyquist_col_iter = (sim.size_x / 2..sim.size_x * sim.size_y).step_by(sim.size_x);
+        {
+            // some scoping so refs are dropped
+            let bx = &mut self.b_x_wrk;
+            let by = &mut self.b_y_wrk;
+            let bz = &mut self.b_z_wrk;
+            let ex = &mut self.e_x.spectral;
+            let ey = &mut self.e_y.spectral;
+            let ez = &mut self.e_z.spectral;
+            for i in nyquist_col_iter {
+                unsafe {
+                    // safe because the iterator returns values between 0 and than
+                    // sim.size_x * sim.size_z exclusive and size of all these fields
+                    // was asserted to be sim_size_x * sim.size_y
+                    *ex.get_unchecked_mut(i) = Complex::zero();
+                    *ey.get_unchecked_mut(i) = Complex::zero();
+                    *ez.get_unchecked_mut(i) = Complex::zero();
+                    *bx.get_unchecked_mut(i) = Complex::zero();
+                    *by.get_unchecked_mut(i) = Complex::zero();
+                    *bz.get_unchecked_mut(i) = Complex::zero();
+                }
+            }
+        }
+        // now filter out nyquist row
+        let ny_row_start = sim.size_y * sim.size_x / 2;
+        let ny_row_end = ny_row_start + sim.size_x;
+        for fld in &mut [
+            &mut self.b_x_wrk,
+            &mut self.b_y_wrk,
+            &mut self.b_z_wrk,
+            &mut self.e_x.spectral,
+            &mut self.e_y.spectral,
+            &mut self.e_z.spectral,
+        ] {
+            for v in fld[ny_row_start..ny_row_end].iter_mut() {
+                *v = Complex::zero();
+            }
+        }
     }
 }
