@@ -579,6 +579,11 @@ impl Flds {
                 &mut self.fft_y_buf,
             );
         }
+        
+        // clean k=0 contributions from currents
+        self.j_x.spectral[0] = Complex::zero();
+        self.j_y.spectral[0] = Complex::zero();
+        // No j_z???  why?
 
         // copy previous timestep
         for (b_copy, b_prev) in &mut [
@@ -591,5 +596,43 @@ impl Flds {
             }
         }
         // Take fft of electric fields
+        for e_fld in &mut [
+            &mut self.e_x.spectral,
+            &mut self.e_y.spectral,
+            &mut self.e_z.spectral,
+        ] {
+            Flds::fft2d(
+                self.fft_x.clone(),
+                self.fft_y.clone(),
+                sim,
+                e_fld,
+                &mut self.cmp_wrkspace,
+                &mut self.fft_x_buf,
+                &mut self.fft_y_buf,
+            );
+        }
+ 
+        // push on electric field
+        // self.ex += 1j*self.rey*bz2-self.ckc*cx
+        // self.ey += -1j*self.rex*bz2-self.ckc*cy
+        // self.ez += 1j*self.rex*by2-1j*self.rey*bx2-self.ckc*cz
+        /*
+        #
+        # save k=0 components because impossible to apply correction
+        # (division by 0)
+        ex0=self.ex[0,0]
+        ey0=self.ey[0,0]
+
+        # Boris correction:
+        ex1=np.copy(self.ex)  # bidouille bizarre mais il faut
+        ey1=np.copy(self.ey)  # Tranlation -> weird hack but it works
+        self.ex = ex1-(self.kx*ex1+self.ky*ey1+1j*d1)*self.kx*self.norm1
+        self.ey = ey1-(self.kx*ex1+self.ky*ey1+1j*d1)*sel.ky*self.norm1
+        # restablish uncorrected longitudinal electric field...
+        # needed to conserve the contribution from motional electric field
+        # if upstream moving plasma carries magnetic frozen in field
+        self.ex[0,0] = ex0
+        self.ey[0,0] = ey0
+        */
     }
 }
