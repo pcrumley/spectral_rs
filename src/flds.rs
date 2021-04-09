@@ -41,7 +41,6 @@ pub struct Flds {
     fft_x_buf: Vec<Complex<Float>>,
     fft_y_buf: Vec<Complex<Float>>,
     real_wrkspace_ghosts: Vec<Float>,
-    real_wrkspace: Vec<Float>,
     cmp_wrkspace: Vec<Complex<Float>>,
     pub dsty: Fld,
 }
@@ -208,7 +207,6 @@ impl Flds {
             fft_x_buf: xscratch,
             fft_y_buf: yscratch,
             real_wrkspace_ghosts: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-            real_wrkspace: vec![0.0; (sim.size_y) * (sim.size_x)],
             cmp_wrkspace: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_x_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
@@ -556,7 +554,7 @@ impl Flds {
         binomial_filter_2_d(sim, &mut self.j_y.spatial, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.j_z.spatial, &mut self.real_wrkspace_ghosts);
         binomial_filter_2_d(sim, &mut self.dsty.spatial, &mut self.real_wrkspace_ghosts);
-
+         
         // copy the flds to the complex arrays to perform ffts;
         self.copy_spatial_to_spectral(sim);
 
@@ -567,6 +565,7 @@ impl Flds {
             &mut self.j_z.spectral,
             &mut self.dsty.spectral,
         ] {
+            println!("{}", current.iter().any(|o| o.re.is_nan() || o.im.is_nan()));
             Flds::fft2d(
                 self.fft_x.clone(),
                 self.fft_y.clone(),
@@ -707,26 +706,22 @@ impl Flds {
                 assert_eq!(tot_cells, fld.spectral.len());
             }
         }
-        let nyquist_col_iter = (sim.size_x / 2..sim.size_x * sim.size_y).step_by(sim.size_x);
-        {
-            // some scoping so refs are dropped
-            let bx = &mut self.b_x_wrk;
-            let by = &mut self.b_y_wrk;
-            let bz = &mut self.b_z_wrk;
-            let ex = &mut self.e_x.spectral;
-            let ey = &mut self.e_y.spectral;
-            let ez = &mut self.e_z.spectral;
-            for i in nyquist_col_iter {
+        let ny_col_start = sim.size_x / 2;
+        let ny_end = sim.size_x * sim.size_y;
+        for fld in &mut [
+            &mut self.b_x_wrk,
+            &mut self.b_y_wrk,
+            &mut self.b_z_wrk,
+            &mut self.e_x.spectral,
+            &mut self.e_y.spectral,
+            &mut self.e_z.spectral,
+        ] {
+            for i in (ny_col_start..ny_end).step_by(sim.size_x) {
                 unsafe {
-                    // safe because the iterator returns values between 0 and than
-                    // sim.size_x * sim.size_z exclusive and size of all these fields
+                    // safe because the iterator returns values between 0 and
+                    // sim.size_x * sim.size_y exclusive and size of all these fields
                     // was asserted to be sim_size_x * sim.size_y
-                    *ex.get_unchecked_mut(i) = Complex::zero();
-                    *ey.get_unchecked_mut(i) = Complex::zero();
-                    *ez.get_unchecked_mut(i) = Complex::zero();
-                    *bx.get_unchecked_mut(i) = Complex::zero();
-                    *by.get_unchecked_mut(i) = Complex::zero();
-                    *bz.get_unchecked_mut(i) = Complex::zero();
+                    *fld.get_unchecked_mut(i) = Complex::zero();
                 }
             }
         }
@@ -745,5 +740,50 @@ impl Flds {
                 *v = Complex::zero();
             }
         }
+
+        // advance B.spectral by half timestep using averaging
+        // so that it is at time t+1
+        for (b_minus_half, b_plus_half) in &mut [
+            (&mut self.b_x.spectral, &self.b_x_wrk),
+            (&mut self.b_y.spectral, &self.b_y_wrk),
+            (&mut self.b_z.spectral, &self.b_z_wrk),
+        ] {
+            for (v1, v2) in b_minus_half.iter_mut().zip(b_plus_half.iter()) {
+                *v1 = 0.5 * (*v1 + *v2);
+            }
+        }
+
+        // take the inverse fft to return to spatial domain
+        for fld in &mut [
+            &mut self.b_x.spectral,
+            &mut self.b_y.spectral,
+            &mut self.b_z.spectral,
+            &mut self.e_x.spectral,
+            &mut self.e_y.spectral,
+            &mut self.e_z.spectral,
+        ] {
+            Flds::fft2d(
+                self.ifft_x.clone(),
+                self.ifft_y.clone(),
+                sim,
+                fld,
+                &mut self.cmp_wrkspace,
+                &mut self.fft_x_buf,
+                &mut self.fft_y_buf,
+            );
+        }
+        // copy that fft to real array
+        /* 
+        for fld in &mut [
+            &mut self.b_x,
+            &mut self.b_y,
+            &mut self.b_z,
+            &mut self.e_x,
+            &mut self.e_y,
+            &mut self.e_z,
+        ] {
+            fld.copy_to_spatial(&sim);
+        }
+        */
     }
 }

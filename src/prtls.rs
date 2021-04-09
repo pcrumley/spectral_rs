@@ -92,68 +92,77 @@ impl Prtl {
         }
 
         // Now iterate over x array
-        for ix in self.ix.iter_mut() {
-            if *ix < 1 {
-                *ix += sim.size_x;
-            } else if *ix > sim.size_x {
-                *ix -= sim.size_x;
+        if cfg!(feature = "periodic") {
+            for ix in self.ix.iter_mut() {
+                if *ix < 1 {
+                    *ix += sim.size_x;
+                } else if *ix > sim.size_x {
+                    *ix -= sim.size_x;
+                }
+            }
+        } else {
+            // hit the wall at right hand side
+            if !cfg!(feature = "unchecked") {
+                assert!(sim.delta < sim.size_x);
+            }
+            let wall_loc = sim.size_x + 1 - sim.delta;
+            if !cfg!(feature = "unchecked") {
+                assert!(
+                    *self
+                        .ix
+                        .iter()
+                        .max()
+                        .expect("Could not find max of prtl arr. should never happen")
+                        <= wall_loc + 1
+                );
+            }
+            for (ix, dx, px) in izip!(self.ix.iter_mut(), self.dx.iter_mut(), self.px.iter_mut()) {
+                if *ix < wall_loc {
+                    // Do nothing.
+                } else if *ix == wall_loc {
+                    // if dx is positive that means it has crossed the wall,
+                    // so we flip the sign of px and dx. Could put in an if
+                    // statement but doing this way for branch prediction
+                    // reasons.
+                    let sgn = dx.signum();
+                    *px *= -sgn;
+                    *dx *= -sgn;
+                } else {
+                    *dx -= 1.0;
+                    *ix -= 1;
+                    *px *= -1.0;
+                }
             }
         }
-
-        // x boundary conditions are incorrect
-        // let c1 = sim.size_x - sim.delta;
-        // let c2 = 2 * c1;
-
-        //for (ix, px) in self.ix.iter_mut().zip(self.px.iter_mut()) {
-        //     if *ix >= c1 {
-        //         *ix = c2 - *ix;
-        //         *px *= -1.0;
-        //     }
-        //}
     }
     fn initialize_positions(&mut self, sim: &Sim) {
         // A method to calculate the initial, non-random
         // position of the particles
         let mut c1 = 0;
         // let mut rng = thread_rng();
-        if true {
-            for i in 0..sim.size_y {
-                for j in sim.delta..sim.size_x - sim.delta {
-                    for k in 0..sim.dens as usize {
-                        // RANDOM OPT
-                        // let r1: Float = rng.sample(Standard);
-                        // let r2: Float = rng.sample(Standard);
-                        // self.x[c1+k]= r1 + (j as Float);
-                        // self.y[c1+k]= r2 + (i as Float);
+        for i in 0..sim.size_y {
+            for j in sim.delta..sim.size_x - sim.delta {
+                for k in 0..sim.dens as usize {
+                    // RANDOM OPT
+                    // let r1: Float = rng.sample(Standard);
+                    // let r2: Float = rng.sample(Standard);
+                    // self.x[c1+k]= r1 + (j as Float);
+                    // self.y[c1+k]= r2 + (i as Float);
 
-                        // UNIFORM OPT
-                        self.iy[c1 + k] = i + 1; // +1 for ghost zone
-                        self.ix[c1 + k] = j + 1; // +1 for ghost zone
+                    // UNIFORM OPT
+                    self.iy[c1 + k] = i + 1; // +1 for ghost zone
+                    self.ix[c1 + k] = j + 1; // +1 for ghost zone
 
-                        let mut r1 = 1.0 / (2.0 * (sim.dens as Float));
-                        r1 = (2. * (k as Float) + 1.) * r1;
-                        self.dx[c1 + k] = r1 - 0.5;
-                        self.dy[c1 + k] = r1 - 0.5;
-                        self.tag[c1 + k] = (c1 + k) as u64;
-                    }
-                    c1 += sim.dens as usize;
-                    // helper_arr = -.5+0.25+np.arange(dens)*.5
+                    let mut r1 = 1.0 / (2.0 * (sim.dens as Float));
+                    r1 = (2. * (k as Float) + 1.) * r1;
+                    self.dx[c1 + k] = r1 - 0.5;
+                    self.dy[c1 + k] = r1 - 0.5;
+                    self.tag[c1 + k] = (c1 + k) as u64;
                 }
-            }
-        } else {
-            for i in 0..self.iy.len() {
-                self.iy[i] = 1 + i * ((sim.size_y as Float) / (self.iy.len() as Float)) as usize;
-                self.ix[i] = sim.size_x - 4;
-                self.dx[i] = 0.0;
-                self.dy[i] = 0.0;
+                c1 += sim.dens as usize;
+                // helper_arr = -.5+0.25+np.arange(dens)*.5
             }
         }
-        //    for j in range(delta, Lx-delta):
-        //#for i in range(Ly//2, Ly//2+10):
-        //    for j in range(delta, delta+10):
-        //        xArr[c1:c1+dens] = helper_arr + j
-        //        yArr[c1:c1+dens] = helper_arr + i
-        //        c1+=dens
     }
     fn initialize_velocities(&mut self, sim: &Sim) {
         let csqinv = 1. / (sim.c * sim.c);
