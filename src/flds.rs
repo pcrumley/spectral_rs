@@ -56,6 +56,7 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
     let weights: [Float; 3] = [0.25, 0.5, 0.25];
     // account for ghost zones
     // FIRST FILTER IN X-DIRECTION
+
     for _ in 0..sim.n_pass {
         for i in ((sim.size_x + 2)..(sim.size_y + 1) * (sim.size_x + 2)).step_by(sim.size_x + 2) {
             for j in 1..sim.size_x + 1 {
