@@ -5,6 +5,8 @@ use itertools::izip;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
+pub mod ghosts;
+use crate::flds::ghosts::update_ghosts;
 
 pub struct Pos {
     pub row: usize,
@@ -74,7 +76,7 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
             }
         }
 
-        Flds::update_ghosts(&sim, wrkspace);
+        update_ghosts(&sim, wrkspace);
 
         // NOW FILTER IN Y-DIRECTION AND PUT VALS IN in_vec
         for i in ((sim.size_x + 2)..(sim.size_y + 1) * (sim.size_x + 2)).step_by(sim.size_x + 2) {
@@ -91,7 +93,7 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
             }
         }
 
-        Flds::update_ghosts(&sim, in_vec);
+        update_ghosts(&sim, in_vec);
     }
 }
 
@@ -145,7 +147,7 @@ impl Fld {
                 }
             }
         }
-        Flds::update_ghosts(sim, spatial);
+        update_ghosts(sim, spatial);
     }
 }
 
@@ -261,228 +263,6 @@ impl Flds {
         }
         */
         f
-    }
-
-    #[inline(always)]
-    pub fn update_ghosts(sim: &Sim, fld: &mut Vec<Float>) -> () {
-        let size_x = sim.size_x;
-        let size_y = sim.size_y;
-        if !cfg!(feature = "unchecked") {
-            assert!(fld.len() == (size_x + 2) * (size_y + 2));
-        }
-        // Copy bottom row into top ghost row
-        let ghost_start = sim.spatial_get_index(Pos { row: 0, col: 1 });
-        let ghost_range = ghost_start..ghost_start + size_x;
-        let real_start = sim.spatial_get_index(Pos {
-            row: sim.size_y,
-            col: 1,
-        });
-        let real_range = real_start..real_start + size_x;
-        for (ighost, ireal) in ghost_range.zip(real_range) {
-            unsafe {
-                *fld.get_unchecked_mut(ighost) = *fld.get_unchecked(ireal);
-            }
-        }
-        // Copy top row into bottom ghost row
-        let ghost_start = sim.spatial_get_index(Pos {
-            row: size_y + 1,
-            col: 1,
-        });
-        let ghost_range = ghost_start..ghost_start + size_x;
-        let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
-        let real_range = real_start..real_start + size_x;
-        for (ighost, ireal) in ghost_range.zip(real_range) {
-            unsafe {
-                *fld.get_unchecked_mut(ighost) = *fld.get_unchecked(ireal);
-            }
-        }
-        // copy into left ghost columns from right real column
-        let ghost_start = sim.spatial_get_index(Pos { row: 1, col: 0 });
-        let ghost_end = sim.spatial_get_index(Pos {
-            row: 1 + size_y,
-            col: 0,
-        });
-        let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
-        let real_start = sim.spatial_get_index(Pos {
-            row: 1,
-            col: size_x,
-        });
-        let real_end = sim.spatial_get_index(Pos {
-            row: 1 + size_y,
-            col: size_x,
-        });
-        let real_range = (real_start..real_end).step_by(2 + size_x);
-        for (ighost, ireal) in ghost_range.zip(real_range) {
-            unsafe {
-                *fld.get_unchecked_mut(ighost) = *fld.get_unchecked(ireal);
-            }
-        }
-
-        // copy into right ghost columns from left real column
-        let ghost_start = sim.spatial_get_index(Pos {
-            row: 1,
-            col: size_x + 1,
-        });
-        let ghost_end = sim.spatial_get_index(Pos {
-            row: 1 + size_y,
-            col: size_x + 1,
-        });
-        let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
-        let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
-        let real_end = sim.spatial_get_index(Pos {
-            row: 1 + size_y,
-            col: 1,
-        });
-        let real_range = (real_start..real_end).step_by(2 + size_x);
-        for (ighost, ireal) in ghost_range.zip(real_range) {
-            unsafe {
-                *fld.get_unchecked_mut(ighost) = *fld.get_unchecked(ireal);
-            }
-        }
-        // now do the corners
-        // copy into top left from bottom right
-        let btm_right = sim.spatial_get_index(Pos {
-            row: size_y,
-            col: size_x,
-        });
-        unsafe { *fld.get_unchecked_mut(0) = *fld.get_unchecked(btm_right) }
-
-        // copy into top right from bottom left
-        let btm_left = sim.spatial_get_index(Pos {
-            row: size_y,
-            col: 1,
-        });
-        unsafe { *fld.get_unchecked_mut(size_x + 1) = *fld.get_unchecked(btm_left) }
-
-        // copy into bottom left from top right
-        let ghost_btm_left = sim.spatial_get_index(Pos {
-            row: size_y + 1,
-            col: 0,
-        });
-        let top_right = sim.spatial_get_index(Pos {
-            row: 1,
-            col: size_x,
-        });
-        unsafe { *fld.get_unchecked_mut(ghost_btm_left) = *fld.get_unchecked(top_right) }
-
-        // Copy into bottom right from top left
-        let ghost_btm_right = sim.spatial_get_index(Pos {
-            row: size_y + 1,
-            col: size_x + 1,
-        });
-        let top_left = sim.spatial_get_index(Pos { row: 1, col: 1 });
-        unsafe { *fld.get_unchecked_mut(ghost_btm_right) = *fld.get_unchecked(top_left) }
-    }
-
-    #[inline(always)]
-    pub fn deposit_ghosts(sim: &Sim, fld: &mut Vec<Float>) -> () {
-        let size_x = sim.size_x;
-        let size_y = sim.size_y;
-        if !cfg!(feature = "unchecked") {
-            assert!(fld.len() == (size_x + 2) * (size_y + 2));
-        }
-        // deposit top ghost row into last row
-        let ghost_start = sim.spatial_get_index(Pos { row: 0, col: 1 });
-        let ghost_range = ghost_start..ghost_start + size_x;
-        let real_start = sim.spatial_get_index(Pos {
-            row: sim.size_y,
-            col: 1,
-        });
-        let real_range = real_start..real_start + size_x;
-        for (ighost, ireal) in ghost_range.zip(real_range) {
-            unsafe {
-                *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
-            }
-        }
-        // deposit bottom ghost row into top real row
-        let ghost_start = sim.spatial_get_index(Pos {
-            row: size_y + 1,
-            col: 1,
-        });
-        let ghost_range = ghost_start..ghost_start + size_x;
-        let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
-        let real_range = real_start..real_start + size_x;
-        for (ighost, ireal) in ghost_range.zip(real_range) {
-            unsafe {
-                *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
-            }
-        }
-        // deposit left ghost columns into right real column
-        let ghost_start = sim.spatial_get_index(Pos { row: 1, col: 0 });
-        let ghost_end = sim.spatial_get_index(Pos {
-            row: 1 + size_y,
-            col: 0,
-        });
-        let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
-        let real_start = sim.spatial_get_index(Pos {
-            row: 1,
-            col: size_x,
-        });
-        let real_end = sim.spatial_get_index(Pos {
-            row: 1 + size_y,
-            col: size_x,
-        });
-        let real_range = (real_start..real_end).step_by(2 + size_x);
-        for (ighost, ireal) in ghost_range.zip(real_range) {
-            unsafe {
-                *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
-            }
-        }
-
-        // deposit right ghost columns into left real column
-        let ghost_start = sim.spatial_get_index(Pos {
-            row: 1,
-            col: size_x + 1,
-        });
-        let ghost_end = sim.spatial_get_index(Pos {
-            row: 1 + size_y,
-            col: size_x + 1,
-        });
-        let ghost_range = (ghost_start..ghost_end).step_by(size_x + 2);
-        let real_start = sim.spatial_get_index(Pos { row: 1, col: 1 });
-        let real_end = sim.spatial_get_index(Pos {
-            row: 1 + size_y,
-            col: 1,
-        });
-        let real_range = (real_start..real_end).step_by(2 + size_x);
-        for (ighost, ireal) in ghost_range.zip(real_range) {
-            unsafe {
-                *fld.get_unchecked_mut(ireal) += *fld.get_unchecked(ighost);
-            }
-        }
-        // now do the corners
-        // deposit top left into bottom right
-        let btm_right = sim.spatial_get_index(Pos {
-            row: size_y,
-            col: size_x,
-        });
-        unsafe { *fld.get_unchecked_mut(btm_right) += *fld.get_unchecked(0) }
-
-        // depost top right into bottom left
-        let btm_left = sim.spatial_get_index(Pos {
-            row: size_y,
-            col: 1,
-        });
-        unsafe { *fld.get_unchecked_mut(btm_left) += *fld.get_unchecked(size_x + 1) }
-
-        // depost bottom left into top right
-        let ghost_btm_left = sim.spatial_get_index(Pos {
-            row: size_y + 1,
-            col: 0,
-        });
-        let top_right = sim.spatial_get_index(Pos {
-            row: 1,
-            col: size_x,
-        });
-        unsafe { *fld.get_unchecked_mut(top_right) += *fld.get_unchecked(ghost_btm_left) }
-
-        // depost bottom right into top left
-        let ghost_btm_right = sim.spatial_get_index(Pos {
-            row: size_y + 1,
-            col: size_x + 1,
-        });
-        let top_left = sim.spatial_get_index(Pos { row: 1, col: 1 });
-        unsafe { *fld.get_unchecked_mut(top_left) += *fld.get_unchecked(ghost_btm_right) }
     }
 
     pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<Float>>, out_fld: &mut Vec<Complex<Float>>) {

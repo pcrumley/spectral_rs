@@ -1,7 +1,7 @@
 pub mod flds;
 mod prtls;
 
-use flds::Flds;
+use flds::{ghosts::deposit_ghosts, Flds};
 use prtls::Prtl;
 use serde::Deserialize;
 use std::fs;
@@ -215,6 +215,33 @@ pub struct Sim {
     pub n_pass: u8,       // = 4; //Number of filter passes
 }
 
+pub fn build_test_sim() -> Sim {
+    // convenience method that returns a sim with some simple values
+    // we can pass to our test methods
+    let cfg = Config {
+        output: Output {
+            track_prtls: false,
+            write_output: false,
+            track_interval: 100,
+            output_interval: 100,
+            stride: 4,
+            istep: 1,
+        },
+        setup: Setup { t_final: 1000 },
+        params: Params {
+            size_x: 24,
+            size_y: 12,
+            dt: 0.1,
+            delta: 5,
+            c: 3.0,
+            dens: 2,
+            gamma_inj: 5.0,
+            n_pass: 4,
+        },
+    };
+    Sim::new(&cfg)
+}
+
 impl Sim {
     pub fn new(cfg: &Config) -> Sim {
         Sim {
@@ -414,9 +441,9 @@ impl Sim {
             */
         }
 
-        Flds::deposit_ghosts(self, j_x);
-        Flds::deposit_ghosts(self, j_y);
-        Flds::deposit_ghosts(self, j_z);
+        deposit_ghosts(self, j_x);
+        deposit_ghosts(self, j_y);
+        deposit_ghosts(self, j_z);
     }
 
     fn calc_density(&self, prtl: &Prtl, flds: &mut Flds) {
@@ -503,7 +530,7 @@ impl Sim {
                 dsty[ijp1 + ix + 1] += w22 * prtl.charge;
             */
         }
-        Flds::deposit_ghosts(self, dsty);
+        deposit_ghosts(self, dsty);
     }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
