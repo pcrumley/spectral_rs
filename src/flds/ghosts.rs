@@ -1,4 +1,4 @@
-use crate::{flds::Pos, Float, Sim};
+use crate::{flds::field::Pos, Float, Sim};
 
 #[inline(always)]
 pub fn update_ghosts(sim: &Sim, fld: &mut Vec<Float>) -> () {

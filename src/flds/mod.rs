@@ -5,37 +5,29 @@ use itertools::izip;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
+pub mod field;
 pub mod ghosts;
+use crate::flds::field::Field;
 use crate::flds::ghosts::update_ghosts;
-
-pub struct Pos {
-    pub row: usize,
-    pub col: usize,
-}
-
-pub struct Fld {
-    pub spatial: Vec<Float>,
-    pub spectral: Vec<Complex<Float>>,
-}
 
 pub struct WaveVectors {
     k_x: Vec<Float>,
     k_y: Vec<Float>,
-    k_z: Vec<Float>,
+    k_norm: Vec<Float>,
 }
 
 pub struct Flds {
     // The struct that holds all the fields.
     // First off is all the regular fields.
-    pub e_x: Fld,
-    pub e_y: Fld,
-    pub e_z: Fld,
-    pub b_x: Fld,
-    pub b_y: Fld,
-    pub b_z: Fld,
-    pub j_x: Fld,
-    pub j_y: Fld,
-    pub j_z: Fld,
+    pub e_x: Field,
+    pub e_y: Field,
+    pub e_z: Field,
+    pub b_x: Field,
+    pub b_y: Field,
+    pub b_z: Field,
+    pub j_x: Field,
+    pub j_y: Field,
+    pub j_z: Field,
     k_x: Vec<Float>,
     k_y: Vec<Float>,
     k_norm: Vec<Float>,
@@ -50,7 +42,7 @@ pub struct Flds {
     fft_y_buf: Vec<Complex<Float>>,
     real_wrkspace_ghosts: Vec<Float>,
     cmp_wrkspace: Vec<Complex<Float>>,
-    pub dsty: Fld,
+    pub dsty: Field,
 }
 
 #[inline(always)]
@@ -97,60 +89,6 @@ fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Fl
     }
 }
 
-impl Fld {
-    #[inline(always)]
-    pub fn copy_to_spectral(&mut self, sim: &Sim) -> () {
-        // assert stuff about ghost zones etc.
-        let spatial = &self.spatial;
-        let spectral = &mut self.spectral;
-        if !cfg!(feature = "unchecked") {
-            assert!(spatial.len() == (sim.size_x + 2) * (sim.size_y + 2));
-            assert!(spectral.len() == sim.size_x * sim.size_y);
-        }
-        let size_x = sim.size_x;
-        let size_y = sim.size_y;
-        for iy in 0..size_y {
-            let ij = iy * (size_x);
-            let ij_ghosts = (iy + 1) * (size_x + 2);
-            for ix in 0..size_x {
-                unsafe {
-                    // completely safe due to assert above... unless unchecked is run.
-                    // still should be fine but not guaranteed at runtime.
-                    spectral.get_unchecked_mut(ij + ix).re =
-                        *spatial.get_unchecked(ij_ghosts + ix + 1);
-                    spectral.get_unchecked_mut(ij + ix).im = 0.0;
-                }
-            }
-        }
-    }
-
-    #[inline(always)]
-    pub fn copy_to_spatial(&mut self, sim: &Sim) -> () {
-        // assert stuff about ghost zones etc.
-        let spatial = &mut self.spatial;
-        let spectral = &self.spectral;
-        if !cfg!(feature = "unchecked") {
-            assert!(spatial.len() == (sim.size_x + 2) * (sim.size_y + 2));
-            assert!(spectral.len() == sim.size_x * sim.size_y);
-        }
-        let size_x = sim.size_x;
-        let size_y = sim.size_y;
-        for iy in 0..size_y {
-            let ij = iy * (size_x);
-            let ij_ghosts = (iy + 1) * (size_x + 2);
-            for ix in 0..size_x {
-                unsafe {
-                    // completely safe due to assert above... unless unchecked is run.
-                    // still should be fine but not guaranteed at runtime.
-                    *spatial.get_unchecked_mut(ij_ghosts + ix + 1) =
-                        spectral.get_unchecked(ij + ix).re;
-                }
-            }
-        }
-        update_ghosts(sim, spatial);
-    }
-}
-
 impl Flds {
     pub fn new(sim: &Sim) -> Flds {
         // let Bnorm = 0Float;
@@ -165,43 +103,43 @@ impl Flds {
         let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
 
         let mut f = Flds {
-            e_x: Fld {
+            e_x: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            e_y: Fld {
+            e_y: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            e_z: Fld {
+            e_z: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            b_x: Fld {
+            b_x: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            b_y: Fld {
+            b_y: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            b_z: Fld {
+            b_z: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            j_x: Fld {
+            j_x: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            j_y: Fld {
+            j_y: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            j_z: Fld {
+            j_z: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            dsty: Fld {
+            dsty: Field {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
