@@ -20,6 +20,7 @@ pub(crate) struct Prtl {
     pub tag: Vec<u64>,
     pub track: Vec<bool>,
 }
+
 fn _fld2prtl(sim: &Sim, ix: usize, iy: usize, dx: Float, dy: Float, fld: &Vec<Float>) -> Float {
     // this function has been replaced with a fully inline one for
     // performance reasons. Leaving here for historical reasons.
@@ -80,6 +81,45 @@ impl Prtl {
         prtl.apply_bc(sim);
         prtl
     }
+    #[inline(always)]
+    pub(crate) fn update_position(&mut self, sim: &Sim) {
+        let mut c1: Float;
+        let dt = sim.dt;
+        for (ix, iy, dx, dy, px, py, psa) in izip!(
+            &mut self.ix,
+            &mut self.iy,
+            &mut self.dx,
+            &mut self.dy,
+            &self.px,
+            &self.py,
+            &self.psa
+        ) {
+            if !cfg!(feature = "unchecked") {
+                // check that we don't underflow
+                assert!(*ix > 0);
+                assert!(*iy > 0);
+            }
+            c1 = 0.5 * dt * psa.powi(-1);
+            *dx += c1 * px;
+            if *dx >= 0.5 {
+                *dx -= 1.0;
+                *ix += 1;
+            } else if *dx < -0.5 {
+                *dx += 1.0;
+                *ix -= 1;
+            }
+            *dy += c1 * py;
+            if *dy >= 0.5 {
+                *dy -= 1.0;
+                *iy += 1;
+            } else if *dy < -0.5 {
+                *dy += 1.0;
+                *iy -= 1;
+            }
+        }
+    }
+
+    #[inline(always)]
     pub(crate) fn apply_bc(&mut self, sim: &Sim) {
         // PERIODIC BOUNDARIES IN Y
         // First iterate over y array and apply BC

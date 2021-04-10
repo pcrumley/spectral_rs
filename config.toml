@@ -2,8 +2,8 @@
 t_final = 10
 
 [params]
-size_x = 1200
-size_y = 50
+size_x = 48
+size_y = 24 
 delta = 5
 dt = 0.1 # In units 1/omega_pe
 c = 3.0 # This is really c/omega_pe. Don't touch this.

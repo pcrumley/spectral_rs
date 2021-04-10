@@ -16,6 +16,12 @@ pub struct Fld {
     pub spectral: Vec<Complex<Float>>,
 }
 
+pub struct WaveVectors {
+    k_x: Vec<Float>,
+    k_y: Vec<Float>,
+    k_z: Vec<Float>,
+}
+
 pub struct Flds {
     // The struct that holds all the fields.
     // First off is all the regular fields.
@@ -197,8 +203,8 @@ impl Flds {
                 spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
                 spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             },
-            k_x: vec![0.0; sim.size_x],
-            k_y: vec![0.0; sim.size_y],
+            k_x: vec![0.0; sim.size_x * sim.size_y],
+            k_y: vec![0.0; sim.size_y * sim.size_x],
             k_norm: vec![0.0; sim.size_y * sim.size_x],
             fft_x,
             ifft_x,
@@ -214,27 +220,27 @@ impl Flds {
         };
 
         // Build the k basis of FFT
-        for i in 0..f.k_x.len() {
-            f.k_x[i] = i as Float;
-            if i > sim.size_x / 2 + 1 {
-                f.k_x[i] -= sim.size_x as Float;
+        for i in 0..sim.size_y {
+            for j in 0..sim.size_x {
+                let ind = i * sim.size_x + j;
+                // FIRST DO K_X
+                f.k_x[ind] = j as Float;
+                if j >= sim.size_x / 2 + 1 {
+                    f.k_x[ind] -= sim.size_x as Float;
+                }
+                f.k_x[ind] *= 2.0 * PI / (sim.size_x as Float);
+                // NOW DO K_Y
+                f.k_y[ind] = i as Float;
+                if i >= sim.size_y / 2 + 1 {
+                    f.k_y[ind] -= sim.size_y as Float;
+                }
+                f.k_y[ind] *= 2.0 * PI / (sim.size_y as Float);
             }
-            f.k_x[i] *= 2.0 * PI / (sim.size_x as Float);
-        }
-        for i in 0..f.k_y.len() {
-            f.k_y[i] = i as Float;
-            if i > sim.size_y / 2 + 1 {
-                f.k_y[i] -= sim.size_y as Float;
-            }
-            f.k_y[i] *= 2.0 * PI / (sim.size_y as Float);
         }
         // Make the norm:
-        for i in 0..f.k_y.len() {
-            for j in 0..f.k_x.len() {
-                f.k_norm[i * sim.size_x + j] = 1. / (f.k_x[j] * f.k_x[j] + f.k_y[i] * f.k_y[i]);
-            }
+        for (norm, kx, ky) in izip!(&mut f.k_norm, &f.k_x, &f.k_y) {
+            *norm = 1. / (kx * kx + ky * ky);
         }
-
         /* I HAVE NO IDEA WHY THIS IS HERE??? WHAT DOES IT MEAN??
          * IGNORE BUT LEAVING IN CASE I REMEMBER
         if false {
@@ -565,7 +571,6 @@ impl Flds {
             &mut self.j_z.spectral,
             &mut self.dsty.spectral,
         ] {
-            println!("{}", current.iter().any(|o| o.re.is_nan() || o.im.is_nan()));
             Flds::fft2d(
                 self.fft_x.clone(),
                 self.fft_y.clone(),
@@ -773,7 +778,7 @@ impl Flds {
             );
         }
         // copy that fft to real array
-        /*
+        let mut im_sum = 0.0;
         for fld in &mut [
             &mut self.b_x,
             &mut self.b_y,
@@ -782,8 +787,10 @@ impl Flds {
             &mut self.e_y,
             &mut self.e_z,
         ] {
+            im_sum += fld.spectral.iter().map(|o| o.im.abs()).sum::<Float>()
+                / (fld.spectral.len() as Float);
             fld.copy_to_spatial(&sim);
         }
-        */
+        println!("{}", im_sum);
     }
 }

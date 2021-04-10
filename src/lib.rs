@@ -80,6 +80,9 @@ pub fn run(cfg: Config) -> Result<()> {
     prtls.push(Prtl::new(&sim, -1.0, 1.0, 1E-3));
 
     let mut flds = Flds::new(&sim);
+    for prtl in prtls.iter_mut() {
+        sim.move_and_deposit(prtl, &mut flds);
+    }
     /* TODO add better particle tracking
     let mut x_track =
         Vec::<Float>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
@@ -183,11 +186,6 @@ pub fn run(cfg: Config) -> Result<()> {
         println!("pushing prtl");
         for prtl in prtls.iter_mut() {
             prtl.boris_push(&sim, &flds)
-        }
-
-        //calc Density. This part is finished
-        for prtl in prtls.iter_mut() {
-            sim.calc_density(prtl, &mut flds);
         }
 
         sim.t.set(t);
@@ -509,78 +507,16 @@ impl Sim {
     }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
-        let mut c1: Float;
-        for (ix, iy, dx, dy, px, py, psa) in izip!(
-            &mut prtl.ix,
-            &mut prtl.iy,
-            &mut prtl.dx,
-            &mut prtl.dy,
-            &prtl.px,
-            &prtl.py,
-            &prtl.psa
-        ) {
-            if !cfg!(feature = "unchecked") {
-                // check that we don't underflow
-                assert!(*ix > 0);
-                assert!(*iy > 0);
-            }
-            c1 = 0.5 * self.dt * psa.powi(-1);
-            *dx += c1 * px;
-            if *dx >= 0.5 {
-                *dx -= 1.0;
-                *ix += 1;
-            } else if *dx < -0.5 {
-                *dx += 1.0;
-                *ix -= 1;
-            }
-            *dy += c1 * py;
-            if *dy >= 0.5 {
-                *dy -= 1.0;
-                *iy += 1;
-            } else if *dy < -0.5 {
-                *dy += 1.0;
-                *iy -= 1;
-            }
-        }
         //self.dsty *=0
+        prtl.update_position(self);
         prtl.apply_bc(self);
 
         // Deposit currents
         self.deposit_current(prtl, flds);
 
         // UPDATE POS AGAIN!
-        for (ix, iy, dx, dy, px, py, psa) in izip!(
-            &mut prtl.ix,
-            &mut prtl.iy,
-            &mut prtl.dx,
-            &mut prtl.dy,
-            &prtl.px,
-            &prtl.py,
-            &prtl.psa
-        ) {
-            if !cfg!(feature = "unchecked") {
-                // check that we don't underflow
-                assert!(*ix > 0);
-                assert!(*iy > 0);
-            }
-            c1 = 0.5 * self.dt * psa.powi(-1);
-            *dx += c1 * px;
-            if *dx >= 0.5 {
-                *dx -= 1.0;
-                *ix += 1;
-            } else if *dx < -0.5 {
-                *dx += 1.0;
-                *ix -= 1;
-            }
-            *dy += c1 * py;
-            if *dy >= 0.5 {
-                *dy -= 1.0;
-                *iy += 1;
-            } else if *dy < -0.5 {
-                *dy += 1.0;
-                *iy -= 1;
-            }
-        }
+        prtl.update_position(self);
         prtl.apply_bc(self);
+        self.calc_density(&*prtl, flds);
     }
 }
