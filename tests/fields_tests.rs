@@ -2,16 +2,10 @@ use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use spectral_rs::{
     build_test_sim,
-    flds::{Fld, Flds, Pos},
+    flds::{Field, Flds, field::Pos},
     Float,
 };
 
-fn init_flds() -> Flds {
-    let sim = build_test_sim();
-    assert_eq!(sim.size_x, 24);
-    assert_eq!(sim.size_y, 12);
-    Flds::new(&sim)
-}
 
 #[test]
 fn field_init() {
@@ -19,7 +13,8 @@ fn field_init() {
     // size and to zero
     let expected_spatial_val: Vec<Float> = vec![0.; (24 + 2) * (12 + 2)];
     let expected_complex_val: Vec<Complex<Float>> = vec![Complex::zero(); 24 * 12];
-    let flds = init_flds();
+
+    let flds = Flds::new(build_test_sim());
     for fld in &[
         flds.j_x, flds.j_y, flds.j_z, flds.dsty, flds.b_x, flds.b_y, flds.b_z, flds.e_x, flds.e_y,
         flds.e_z,
@@ -114,7 +109,7 @@ fn copy_to_spectral() {
     assert_eq!(sim.size_x * sim.size_y, expected_output.len());
     assert_eq!(input.len(), (sim.size_x + 2) * (sim.size_y + 2));
 
-    let mut test_fld = Fld {
+    let mut test_fld = Field {
         spatial: input.clone(),
         spectral: vec![Complex::zero(); sim.size_x * sim.size_y],
     };
@@ -194,7 +189,7 @@ fn copy_to_spatial() {
     assert_eq!(sim.size_x * sim.size_y, input.len());
     assert_eq!(expected_output.len(), (sim.size_x + 2) * (sim.size_y + 2));
 
-    let mut test_fld = Fld {
+    let mut test_fld = Field {
         spatial: vec![0.0; expected_output.len()],
         spectral: vec![Complex::zero(); sim.size_x * sim.size_y],
     };

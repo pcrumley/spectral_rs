@@ -547,3 +547,14 @@ impl Sim {
         self.calc_density(&*prtl, flds);
     }
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::build_test_sim;
+    #[test]
+    fn sim_init() {
+        let sim = build_test_sim();
+        assert_eq!(sim.size_x, 24);
+        assert_eq!(sim.size_y, 12);
+    }
+}
