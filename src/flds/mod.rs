@@ -1,5 +1,4 @@
 use crate::{Float, Sim};
-const PI: Float = std::f64::consts::PI as Float;
 
 use itertools::izip;
 use rustfft::num_complex::Complex;
@@ -7,12 +6,8 @@ use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
 pub mod field;
 use crate::flds::field::Field;
-
-pub struct WaveVectors {
-    k_x: Vec<Float>,
-    k_y: Vec<Float>,
-    k_norm: Vec<Float>,
-}
+pub mod wave_num;
+use crate::flds::wave_num::WaveNumbers;
 
 pub struct Flds {
     // The struct that holds all the fields.
@@ -54,8 +49,9 @@ impl Flds {
         let ifft_y = planner.plan_fft_inverse(sim.size_y);
         let xscratch = vec![Complex::zero(); fft_x.get_outofplace_scratch_len()];
         let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
-
-        let mut f = Flds {
+        let wave_nums = WaveNumbers::new(sim);
+        
+        Flds {
             e_x: Field::new(sim),
             e_y: Field::new(sim),
             e_z: Field::new(sim),
@@ -66,9 +62,9 @@ impl Flds {
             j_y: Field::new(sim),
             j_z: Field::new(sim),
             dsty: Field::new(sim),
-            k_x: vec![0.0; sim.size_x * sim.size_y],
-            k_y: vec![0.0; sim.size_y * sim.size_x],
-            k_norm: vec![0.0; sim.size_y * sim.size_x],
+            k_x: wave_nums.k_x,
+            k_y: wave_nums.k_y,
+            k_norm: wave_nums.k_norm,
             fft_x,
             ifft_x,
             fft_y,
@@ -79,50 +75,8 @@ impl Flds {
             b_x_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_z_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-        };
+        }
 
-        // Build the k basis of FFT
-        for i in 0..sim.size_y {
-            for j in 0..sim.size_x {
-                let ind = i * sim.size_x + j;
-                // FIRST DO K_X
-                f.k_x[ind] = j as Float;
-                if j >= sim.size_x / 2 + 1 {
-                    f.k_x[ind] -= sim.size_x as Float;
-                }
-                f.k_x[ind] *= 2.0 * PI / (sim.size_x as Float);
-                // NOW DO K_Y
-                f.k_y[ind] = i as Float;
-                if i >= sim.size_y / 2 + 1 {
-                    f.k_y[ind] -= sim.size_y as Float;
-                }
-                f.k_y[ind] *= 2.0 * PI / (sim.size_y as Float);
-            }
-        }
-        // Make the norm:
-        for (norm, kx, ky) in izip!(&mut f.k_norm, &f.k_x, &f.k_y) {
-            *norm = 1. / (kx * kx + ky * ky);
-        }
-        /* I HAVE NO IDEA WHY THIS IS HERE??? WHAT DOES IT MEAN??
-         * IGNORE BUT LEAVING IN CASE I REMEMBER
-        if false {
-            for i in 0..(sim.size_y + 2) {
-                //let tmp_b = 2.0 * Bnorm * (sim.size_y/2 - (i - 1))/(sim.size_y as Float);
-                let tmp_b = 0.0;
-                for j in 0..(sim.size_x + 2) {
-                    if i > (sim.size_y) / 6 && i < 2 * sim.size_y / 6 {
-                        f.e_y[i * (sim.size_x + 2) + j] = -0.9 * tmp_b;
-                        f.b_z[i * (sim.size_x + 2) + j] = tmp_b;
-                    }
-                    if i > 2 * (sim.size_y) / 3 && i < 5 * sim.size_y / 6 {
-                        f.e_y[i * (sim.size_x + 2) + j] = 0.9 * tmp_b;
-                        f.b_z[i * (sim.size_x + 2) + j] = -tmp_b;
-                    }
-                }
-            }
-        }
-        */
-        f
     }
 
     pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<Float>>, out_fld: &mut Vec<Complex<Float>>) {

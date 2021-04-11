@@ -621,27 +621,27 @@ pub mod tests {
 
         let mut test_fld = Field::new(&sim);
 
-        for (v1, v2) in test_fld.spectral.iter_mut().zip(input) {
-            v1.re = v2;
+        for (v1, v2) in test_fld.spectral.iter_mut().zip(input.iter()) {
+            v1.re = *v2;
         }
 
         test_fld.copy_to_spatial(&sim);
 
         assert_eq!(expected_output.len(), test_fld.spatial.len());
-        for (v1, v2) in test_fld.spatial.iter().zip(expected_output) {
-            assert_eq!(*v1, v2);
+        for (v1, v2) in test_fld.spatial.iter().zip(expected_output.iter()) {
+            assert_eq!(*v1, *v2);
         }
 
         assert_eq!(input.len(), test_fld.spectral.len());
-        for (v1, v2) in test_fld.spectral.iter().zip(expected_output) {
-            assert_eq!(v1.re, v2);
+        for (v1, v2) in test_fld.spectral.iter().zip(input.iter()) {
+            assert_eq!(v1.re, *v2);
             assert_eq!(v1.im, 0.0);
         }
     }
     #[test]
     fn ghost_deposit() {
         // made an example using google sheets
-        let mut input: Vec<Float> = vec![
+        let input: Vec<Float> = vec![
             1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.8, 1.8, 1.8, 1.8,
             1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.4, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01,
             0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01,
@@ -709,7 +709,7 @@ pub mod tests {
     #[test]
     fn ghosts_update() {
         // made an example using google sheets
-        let mut input: Vec<Float> = vec![
+        let input: Vec<Float> = vec![
             1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.8, 1.8, 1.8, 1.8,
             1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.8, 1.4, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01,
             0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01,
