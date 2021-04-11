@@ -933,5 +933,12 @@ pub mod tests {
         for (v1, v2) in wave_nums.k_y.iter().zip(expected_wave_nums.k_y.iter()) {
             assert!((*v1 - *v2).abs() < E_TOL);
         }
+        for (v1, v2) in wave_nums
+            .k_norm
+            .iter()
+            .zip(expected_wave_nums.k_norm.iter())
+        {
+            assert!((*v1 - *v2).abs() < E_TOL);
+        }
     }
 }

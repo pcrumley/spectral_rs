@@ -22,7 +22,7 @@ pub type Float = f32;
 pub const E_TOL: Float = 1E-15;
 
 #[cfg(not(feature = "dprec"))]
-pub const E_TOL: Float = 3E-7;
+pub const E_TOL: Float = 1E-6;
 
 #[derive(Deserialize)]
 pub struct Config {
