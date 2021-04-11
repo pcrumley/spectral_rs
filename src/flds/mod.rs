@@ -434,3 +434,34 @@ impl Flds {
         println!("{}", im_sum);
     }
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::build_test_sim;
+    #[test]
+    fn flds_init() {
+        // checks that all fields are intialized to the correct
+        // size and to zero
+        let expected_spatial_val: Vec<Float> = vec![0.; (24 + 2) * (12 + 2)];
+        let expected_complex_val: Vec<Complex<Float>> = vec![Complex::zero(); 24 * 12];
+
+        let sim = build_test_sim();
+        let flds = Flds::new(&sim);
+        for fld in &[
+            flds.j_x, flds.j_y, flds.j_z, flds.dsty, flds.b_x, flds.b_y, flds.b_z, flds.e_x,
+            flds.e_y, flds.e_z,
+        ] {
+            assert_eq!(fld.spatial.len(), expected_spatial_val.len());
+            assert_eq!(fld.spatial.len(), (sim.size_x + 2) * (sim.size_y + 2));
+            assert_eq!(fld.spectral.len(), expected_complex_val.len());
+            assert_eq!(fld.spectral.len(), sim.size_x * sim.size_y);
+            for (v, expected_v) in fld.spatial.iter().zip(expected_spatial_val.iter()) {
+                assert_eq!(v, expected_v);
+            }
+            for (v, expected_v) in fld.spectral.iter().zip(expected_complex_val.iter()) {
+                assert_eq!(v, expected_v);
+            }
+        }
+    }
+}
