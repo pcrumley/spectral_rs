@@ -6,9 +6,7 @@ use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
 pub mod field;
-pub mod ghosts;
 use crate::flds::field::Field;
-use crate::flds::ghosts::update_ghosts;
 
 pub struct WaveVectors {
     k_x: Vec<Float>,
@@ -40,53 +38,8 @@ pub struct Flds {
     ifft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
     fft_x_buf: Vec<Complex<Float>>,
     fft_y_buf: Vec<Complex<Float>>,
-    real_wrkspace_ghosts: Vec<Float>,
-    cmp_wrkspace: Vec<Complex<Float>>,
+    wrkspace: Field,
     pub dsty: Field,
-}
-
-#[inline(always)]
-fn binomial_filter_2_d(sim: &Sim, in_vec: &mut Vec<Float>, wrkspace: &mut Vec<Float>) {
-    // wrkspace should be same size as fld
-    if !cfg!(feature = "unchecked") {
-        assert!(in_vec.len() == wrkspace.len());
-        assert!(in_vec.len() == (sim.size_x + 2) * (sim.size_y + 2));
-    }
-
-    let weights: [Float; 3] = [0.25, 0.5, 0.25];
-    // account for ghost zones
-    // FIRST FILTER IN X-DIRECTION
-
-    for _ in 0..sim.n_pass {
-        for i in ((sim.size_x + 2)..(sim.size_y + 1) * (sim.size_x + 2)).step_by(sim.size_x + 2) {
-            for j in 1..sim.size_x + 1 {
-                wrkspace[i] = weights
-                    .iter()
-                    .zip(&in_vec[i + j - 1..i + j + 1])
-                    .map(|(&w, &f)| w * f)
-                    .sum::<Float>();
-            }
-        }
-
-        update_ghosts(&sim, wrkspace);
-
-        // NOW FILTER IN Y-DIRECTION AND PUT VALS IN in_vec
-        for i in ((sim.size_x + 2)..(sim.size_y + 1) * (sim.size_x + 2)).step_by(sim.size_x + 2) {
-            for j in 1..sim.size_x + 1 {
-                in_vec[i] = weights
-                    .iter()
-                    .zip(
-                        wrkspace[i + j - (sim.size_x + 2)..i + j + (sim.size_x + 2)]
-                            .iter()
-                            .step_by(sim.size_x + 2),
-                    )
-                    .map(|(&w, &f)| w * f)
-                    .sum::<Float>();
-            }
-        }
-
-        update_ghosts(&sim, in_vec);
-    }
 }
 
 impl Flds {
@@ -103,46 +56,16 @@ impl Flds {
         let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
 
         let mut f = Flds {
-            e_x: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            e_y: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            e_z: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            b_x: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            b_y: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            b_z: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            j_x: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            j_y: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            j_z: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
-            dsty: Field {
-                spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-                spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            },
+            e_x: Field::new(sim),
+            e_y: Field::new(sim),
+            e_z: Field::new(sim),
+            b_x: Field::new(sim),
+            b_y: Field::new(sim),
+            b_z: Field::new(sim),
+            j_x: Field::new(sim),
+            j_y: Field::new(sim),
+            j_z: Field::new(sim),
+            dsty: Field::new(sim),
             k_x: vec![0.0; sim.size_x * sim.size_y],
             k_y: vec![0.0; sim.size_y * sim.size_x],
             k_norm: vec![0.0; sim.size_y * sim.size_x],
@@ -152,8 +75,7 @@ impl Flds {
             ifft_y,
             fft_x_buf: xscratch,
             fft_y_buf: yscratch,
-            real_wrkspace_ghosts: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
-            cmp_wrkspace: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            wrkspace: Field::new(sim),
             b_x_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_z_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
@@ -254,16 +176,16 @@ impl Flds {
 
     fn copy_spatial_to_spectral(&mut self, sim: &Sim) {
         // copy j_x, j_y, j_z, dsty into complex vector
-        self.j_x.copy_to_spectral(sim);
-        self.j_y.copy_to_spectral(sim);
-        self.j_z.copy_to_spectral(sim);
+        self.j_x.copy_to_spectral();
+        self.j_y.copy_to_spectral();
+        self.j_z.copy_to_spectral();
         // self.b_x.copy_to_spectral(sim);
         // self.b_y.copy_to_spectral(sim);
         // self.b_z.copy_to_spectral(sim);
-        self.e_x.copy_to_spectral(sim);
-        self.e_y.copy_to_spectral(sim);
-        self.e_z.copy_to_spectral(sim);
-        self.dsty.copy_to_spectral(sim);
+        self.e_x.copy_to_spectral();
+        self.e_y.copy_to_spectral();
+        self.e_z.copy_to_spectral();
+        self.dsty.copy_to_spectral();
         // need to normalize self.dsty.spectral by 1/ sim.dens;
         let norm = 1.0 / (sim.dens as Float);
         for v in self.dsty.spectral.iter_mut() {
@@ -274,11 +196,11 @@ impl Flds {
 
     pub fn update(&mut self, sim: &Sim) {
         // Filter currents and density fields
-        binomial_filter_2_d(sim, &mut self.j_x.spatial, &mut self.real_wrkspace_ghosts);
-        binomial_filter_2_d(sim, &mut self.j_y.spatial, &mut self.real_wrkspace_ghosts);
-        binomial_filter_2_d(sim, &mut self.j_z.spatial, &mut self.real_wrkspace_ghosts);
-        binomial_filter_2_d(sim, &mut self.dsty.spatial, &mut self.real_wrkspace_ghosts);
-
+        for _ in 0..sim.n_pass {
+            for fld in &mut [&mut self.j_x, &mut self.j_y, &mut self.j_z, &mut self.dsty] {
+                fld.binomial_filter_2_d(&mut self.wrkspace);
+            }
+        }
         // copy the flds to the complex arrays to perform ffts;
         self.copy_spatial_to_spectral(sim);
 
@@ -294,7 +216,7 @@ impl Flds {
                 self.fft_y.clone(),
                 sim,
                 current,
-                &mut self.cmp_wrkspace,
+                &mut self.wrkspace.spectral,
                 &mut self.fft_x_buf,
                 &mut self.fft_y_buf,
             );
@@ -328,7 +250,7 @@ impl Flds {
                 self.fft_y.clone(),
                 sim,
                 e_fld,
-                &mut self.cmp_wrkspace,
+                &mut self.wrkspace.spectral,
                 &mut self.fft_x_buf,
                 &mut self.fft_y_buf,
             );
@@ -490,7 +412,7 @@ impl Flds {
                 self.ifft_y.clone(),
                 sim,
                 fld,
-                &mut self.cmp_wrkspace,
+                &mut self.wrkspace.spectral,
                 &mut self.fft_x_buf,
                 &mut self.fft_y_buf,
             );
