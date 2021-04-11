@@ -410,7 +410,7 @@ impl Field {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::build_test_sim;
+    use crate::{build_test_sim, E_TOL};
     #[test]
     fn field_init() {
         // checks that all fields are intialized to the correct
@@ -702,7 +702,7 @@ pub mod tests {
         assert_eq!(fld.spatial.len(), (sim.size_x + 2) * (sim.size_y + 2));
         fld.deposit_ghosts();
         for (v, expected_v) in fld.spatial.into_iter().zip(expected_output) {
-            assert_eq!(v, expected_v);
+            assert!((v - expected_v).abs() < E_TOL);
         }
     }
 
@@ -774,7 +774,7 @@ pub mod tests {
         fld.deposit_ghosts();
         fld.update_ghosts();
         for (v, expected_v) in fld.spatial.into_iter().zip(expected_output) {
-            assert_eq!(v, expected_v);
+            assert!((v - expected_v).abs() < E_TOL);
         }
     }
 }
