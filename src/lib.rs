@@ -1,7 +1,7 @@
 pub mod flds;
 mod prtls;
 
-use flds::{ghosts::deposit_ghosts, Flds};
+use flds::Flds;
 use prtls::Prtl;
 use serde::Deserialize;
 use std::fs;
@@ -261,38 +261,6 @@ impl Sim {
         }
     }
 
-    #[inline(always)]
-    pub fn spatial_get_index(&self, pos: crate::flds::field::Pos) -> usize {
-        // Convenience method to get a position in the array.
-        // Slightly complicated because
-        // Using a 1d vec to represent 2D array for speed.
-        // Here is the layout if it were a 2d array,
-        // with the 1D vec position in []
-        // ----------------------------------
-        // |   [0]    |   [1]    |   [2]    |
-        // |  row: 0  |  row: 0  |  row: 0  |
-        // |  col: 0  |  col: 1  |  col: 2  |
-        // |          |          |          |
-        // ----------------------------------
-        // |   [3]    |   [4]    |   [5]    |
-        // |  row: 1  |  row: 1  |  row: 1  |
-        // |  col: 0  |  col: 1  |  col: 2  |
-        // |          |          |          |
-        // ----------------------------------
-        // |   [6]    |   [7]    |   [8]    |
-        // |  row: 2  |  row: 2  |  row: 2  |
-        // |  col: 1  |  col: 1  |  col: 2  |
-        // |          |          |          |
-        // ----------------------------------
-
-        let row_len = self.size_x + 2;
-        if !cfg!(feature = "unchecked") {
-            assert!(pos.col < row_len);
-            assert!(pos.row < self.size_y + 2);
-        }
-        pos.row * row_len + pos.col
-    }
-
     fn deposit_current(&self, prtl: &Prtl, flds: &mut Flds) {
         // local vars we will use
 
@@ -441,9 +409,9 @@ impl Sim {
             */
         }
 
-        deposit_ghosts(self, j_x);
-        deposit_ghosts(self, j_y);
-        deposit_ghosts(self, j_z);
+        flds.j_x.deposit_ghosts();
+        flds.j_y.deposit_ghosts();
+        flds.j_z.deposit_ghosts();
     }
 
     fn calc_density(&self, prtl: &Prtl, flds: &mut Flds) {
@@ -530,7 +498,7 @@ impl Sim {
                 dsty[ijp1 + ix + 1] += w22 * prtl.charge;
             */
         }
-        deposit_ghosts(self, dsty);
+        flds.dsty.deposit_ghosts();
     }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
