@@ -36,12 +36,7 @@ impl WaveNumbers {
         for (norm, kx, ky) in izip!(&mut k_norm, &k_x, &k_y) {
             *norm = 1. / (kx * kx + ky * ky);
         }
- 
 
-        WaveNumbers {
-            k_x,
-            k_y,
-            k_norm,
-        }
-    } 
+        WaveNumbers { k_x, k_y, k_norm }
+    }
 }

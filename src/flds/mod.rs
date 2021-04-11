@@ -50,7 +50,7 @@ impl Flds {
         let xscratch = vec![Complex::zero(); fft_x.get_outofplace_scratch_len()];
         let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
         let wave_nums = WaveNumbers::new(sim);
-        
+
         Flds {
             e_x: Field::new(sim),
             e_y: Field::new(sim),
@@ -76,7 +76,6 @@ impl Flds {
             b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_z_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
         }
-
     }
 
     pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<Float>>, out_fld: &mut Vec<Complex<Float>>) {
