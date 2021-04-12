@@ -1,13 +1,15 @@
+pub mod fft_2d;
+pub mod field;
+pub mod wave_num;
+
+use crate::flds::fft_2d::Fft2D;
+use crate::flds::field::Field;
+use crate::flds::wave_num::WaveNumbers;
 use crate::{Float, Sim};
 
 use itertools::izip;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
-use rustfft::FftPlanner;
-pub mod field;
-use crate::flds::field::Field;
-pub mod wave_num;
-use crate::flds::wave_num::WaveNumbers;
 
 pub struct Flds {
     // The struct that holds all the fields.
@@ -27,28 +29,14 @@ pub struct Flds {
     b_x_wrk: Vec<Complex<Float>>,
     b_y_wrk: Vec<Complex<Float>>,
     b_z_wrk: Vec<Complex<Float>>,
-    fft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
-    ifft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
-    fft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
-    ifft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
-    fft_x_buf: Vec<Complex<Float>>,
-    fft_y_buf: Vec<Complex<Float>>,
     wrkspace: Field,
     pub dsty: Field,
+    pub fft_2d: Fft2D,
 }
 
 impl Flds {
     pub fn new(sim: &Sim) -> Flds {
         // let Bnorm = 0Float;
-        let mut planner = FftPlanner::new();
-        let mut inv_planner = FftPlanner::new();
-
-        let fft_x = planner.plan_fft_forward(sim.size_x);
-        let ifft_x = inv_planner.plan_fft_inverse(sim.size_x);
-        let fft_y = planner.plan_fft_forward(sim.size_y);
-        let ifft_y = planner.plan_fft_inverse(sim.size_y);
-        let xscratch = vec![Complex::zero(); fft_x.get_outofplace_scratch_len()];
-        let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
         let wave_nums = WaveNumbers::new(sim);
 
         Flds {
@@ -65,68 +53,13 @@ impl Flds {
             k_x: wave_nums.k_x,
             k_y: wave_nums.k_y,
             k_norm: wave_nums.k_norm,
-            fft_x,
-            ifft_x,
-            fft_y,
-            ifft_y,
-            fft_x_buf: xscratch,
-            fft_y_buf: yscratch,
-            wrkspace: Field::new(sim),
             b_x_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_z_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+            fft_2d: Fft2D::new(sim),
+            wrkspace: Field::new(sim),
         }
     }
-
-    pub fn transpose(sim: &Sim, in_fld: &Vec<Complex<Float>>, out_fld: &mut Vec<Complex<Float>>) {
-        // check to make sure the two vecs are the same size
-        if !cfg!(feature = "unchecked") {
-            assert!(in_fld.len() == out_fld.len());
-            assert!(sim.size_y * sim.size_x == in_fld.len());
-        }
-        for i in 0..sim.size_y {
-            for j in 0..sim.size_x {
-                unsafe {
-                    // If you don't trust this unsafe section,
-                    // run the code with the checked feature
-                    // len(out_fld) == len(in_fld)
-                    // && size_y * size_x == len(out_fld)
-                    *out_fld.get_unchecked_mut(i * sim.size_x + j) =
-                        *in_fld.get_unchecked(j * sim.size_y + i);
-                }
-                // bounds checked version
-                // out_fld[i * sim.size_x + j] = in_fld[j * sim.size_y + i];
-            }
-        }
-    }
-
-    fn fft2d(
-        fft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
-        fft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
-        sim: &Sim,
-        fld: &mut Vec<Complex<Float>>,
-        wrk_space: &mut Vec<Complex<Float>>,
-        xscratch: &mut Vec<Complex<Float>>,
-        yscratch: &mut Vec<Complex<Float>>,
-    ) {
-        for iy in (0..sim.size_y * sim.size_x).step_by(sim.size_x) {
-            fft_x.process_outofplace_with_scratch(
-                &mut fld[iy..iy + sim.size_x],
-                &mut wrk_space[iy..iy + sim.size_x],
-                xscratch,
-            );
-        }
-        Flds::transpose(sim, wrk_space, fld);
-        for iy in (0..sim.size_x * sim.size_y).step_by(sim.size_y) {
-            fft_y.process_outofplace_with_scratch(
-                &mut fld[iy..iy + sim.size_y],
-                &mut wrk_space[iy..iy + sim.size_y],
-                yscratch,
-            );
-        }
-        Flds::transpose(sim, wrk_space, fld);
-    }
-
     fn copy_spatial_to_spectral(&mut self, sim: &Sim) {
         // copy j_x, j_y, j_z, dsty into complex vector
         self.j_x.copy_to_spectral();
@@ -158,21 +91,8 @@ impl Flds {
         self.copy_spatial_to_spectral(sim);
 
         // Take fft of currents
-        for current in &mut [
-            &mut self.j_x.spectral,
-            &mut self.j_y.spectral,
-            &mut self.j_z.spectral,
-            &mut self.dsty.spectral,
-        ] {
-            Flds::fft2d(
-                self.fft_x.clone(),
-                self.fft_y.clone(),
-                sim,
-                current,
-                &mut self.wrkspace.spectral,
-                &mut self.fft_x_buf,
-                &mut self.fft_y_buf,
-            );
+        for current in &mut [&mut self.j_x, &mut self.j_y, &mut self.j_z, &mut self.dsty] {
+            self.fft_2d.fft(current, &mut self.wrkspace);
         }
 
         // clean k=0 contributions from currents
@@ -193,20 +113,8 @@ impl Flds {
             }
         }
         // Take fft of electric fields
-        for e_fld in &mut [
-            &mut self.e_x.spectral,
-            &mut self.e_y.spectral,
-            &mut self.e_z.spectral,
-        ] {
-            Flds::fft2d(
-                self.fft_x.clone(),
-                self.fft_y.clone(),
-                sim,
-                e_fld,
-                &mut self.wrkspace.spectral,
-                &mut self.fft_x_buf,
-                &mut self.fft_y_buf,
-            );
+        for e_fld in &mut [&mut self.e_x, &mut self.e_y, &mut self.e_z] {
+            self.fft_2d.fft(e_fld, &mut self.wrkspace);
         }
 
         // push on electric field
@@ -353,22 +261,14 @@ impl Flds {
 
         // take the inverse fft to return to spatial domain
         for fld in &mut [
-            &mut self.b_x.spectral,
-            &mut self.b_y.spectral,
-            &mut self.b_z.spectral,
-            &mut self.e_x.spectral,
-            &mut self.e_y.spectral,
-            &mut self.e_z.spectral,
+            &mut self.b_x,
+            &mut self.b_y,
+            &mut self.b_z,
+            &mut self.e_x,
+            &mut self.e_y,
+            &mut self.e_z,
         ] {
-            Flds::fft2d(
-                self.ifft_x.clone(),
-                self.ifft_y.clone(),
-                sim,
-                fld,
-                &mut self.wrkspace.spectral,
-                &mut self.fft_x_buf,
-                &mut self.fft_y_buf,
-            );
+            self.fft_2d.inv_fft(fld, &mut self.wrkspace);
         }
         // copy that fft to real array
         let mut im_sum = 0.0;
