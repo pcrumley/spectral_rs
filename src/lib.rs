@@ -19,7 +19,7 @@ pub type Float = f32;
 // some helpers to make the unit tests pass in both
 // double precision and single precision modes
 #[cfg(feature = "dprec")]
-pub const E_TOL: Float = 1E-15;
+pub const E_TOL: Float = 5E-15;
 
 #[cfg(not(feature = "dprec"))]
 pub const E_TOL: Float = 1E-6;

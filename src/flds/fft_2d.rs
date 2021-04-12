@@ -93,7 +93,7 @@ pub mod tests {
 
     #[test]
     fn forward_fft() {
-        let input: Vec<Float> = vec![
+        let mut input: Vec<Complex<Float>> = vec![
             Complex::new(0.7739560485559633, 0.0),
             Complex::new(0.4388784397520523, 0.0),
             Complex::new(0.8585979199113825, 0.0),
@@ -119,7 +119,7 @@ pub mod tests {
             Complex::new(0.9706980243949033, 0.0),
             Complex::new(0.8931211213221977, 0.0),
         ];
-        let out: Vec<Float> = vec![
+        let out: Vec<Complex<Float>> = vec![
             Complex::new(14.453276849853372, 0.0),
             Complex::new(1.151341674477084, -0.23629347172720028),
             Complex::new(0.9240323845693825, 0.588395230248971),
@@ -145,8 +145,19 @@ pub mod tests {
             Complex::new(0.9240323845693825, -0.588395230248971),
             Complex::new(1.151341674477084, 0.23629347172720028),
         ];
-        let wrkspace: Vec<Float> = vec![Complex::zero(), input.len()];
+        let mut wrkspace: Vec<Complex<Float>> = vec![Complex::zero(); input.len()];
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(input.len());
+        let mut xscratch = vec![Complex::zero(); fft.get_outofplace_scratch_len()];
 
+        assert_eq!(input.len(), wrkspace.len());
+
+        fft.process_outofplace_with_scratch(&mut input, &mut wrkspace, &mut xscratch);
+        assert_eq!(out.len(), wrkspace.len());
+        for (v1, v2) in wrkspace.iter().zip(out) {
+            assert!((v1.re - v2.re).abs() < E_TOL);
+            assert!((v1.im - v2.im).abs() < E_TOL);
+        }
     }
     #[test]
     fn forward_fft2d() {
