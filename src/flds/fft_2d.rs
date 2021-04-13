@@ -44,7 +44,7 @@ impl Fft2D {
     fn transpose_out_of_place(
         in_vec: &mut Vec<Complex<Float>>,
         out_vec: &mut Vec<Complex<Float>>,
-        dim: &FieldDim,
+        dim: &mut FieldDim,
     ) {
         // check to make sure the two vecs are the same size
         let size_x = dim.size_x;
@@ -61,13 +61,15 @@ impl Fft2D {
                     // run the code with the checked feature
                     // len(out_fld) == len(in_fld)
                     // && size_y * size_x == len(out_fld)
-                    *out_vec.get_unchecked_mut(i * size_x + j) =
-                        *in_vec.get_unchecked(j * size_y + i);
+                    *out_vec.get_unchecked_mut(j * size_y + i) =
+                        *in_vec.get_unchecked(i * size_x + j);
                 }
                 // bounds checked version
                 // out_fld[i * sim.size_x + j] = in_fld[j * sim.size_y + i];
             }
         }
+        dim.size_x = size_y;
+        dim.size_y = size_x;
     }
 
     pub fn fft(&mut self, fld: &mut Field) {
@@ -81,14 +83,14 @@ impl Fft2D {
             &mut self.xscratch,
         );
 
-        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &self.field_size);
+        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
         self.fft_y.process_outofplace_with_scratch(
             &mut fld.spectral,
             &mut self.wrkspace,
             &mut self.yscratch,
         );
 
-        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &self.field_size);
+        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
     }
 
     pub fn inv_fft(&mut self, fld: &mut Field) {
@@ -102,81 +104,23 @@ impl Fft2D {
             &mut self.xscratch,
         );
 
-        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &self.field_size);
+        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
         self.ifft_y.process_outofplace_with_scratch(
             &mut fld.spectral,
             &mut self.wrkspace,
             &mut self.yscratch,
         );
 
-        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &self.field_size);
+        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
     }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{build_test_sim, E_TOL};
+    use crate::{build_test_sim, flds::field::Pos, E_TOL};
 
-    #[test]
-    fn forward_fft() {
-        let input: Vec<Float> = vec![
-            Complex::new(0.7739560485559633, 0.0),
-            Complex::new(0.4388784397520523, 0.0),
-            Complex::new(0.8585979199113825, 0.0),
-            Complex::new(0.6973680290593639, 0.0),
-            Complex::new(0.09417734788764953, 0.0),
-            Complex::new(0.9756223516367559, 0.0),
-            Complex::new(0.761139701990353, 0.0),
-            Complex::new(0.7860643052769538, 0.0),
-            Complex::new(0.12811363267554587, 0.0),
-            Complex::new(0.45038593789556713, 0.0),
-            Complex::new(0.37079802423258124, 0.0),
-            Complex::new(0.9267649888486018, 0.0),
-            Complex::new(0.6438651200806645, 0.0),
-            Complex::new(0.82276161327083, 0.0),
-            Complex::new(0.44341419882733113, 0.0),
-            Complex::new(0.2272387217847769, 0.0),
-            Complex::new(0.5545847870158348, 0.0),
-            Complex::new(0.06381725610417532, 0.0),
-            Complex::new(0.8276311719925821, 0.0),
-            Complex::new(0.6316643991220648, 0.0),
-            Complex::new(0.7580877400853738, 0.0),
-            Complex::new(0.35452596812986836, 0.0),
-            Complex::new(0.9706980243949033, 0.0),
-            Complex::new(0.8931211213221977, 0.0),
-        ];
-        let out: Vec<Float> = vec![
-            Complex::new(14.453276849853372, 0.0),
-            Complex::new(1.151341674477084, -0.23629347172720028),
-            Complex::new(0.9240323845693825, 0.588395230248971),
-            Complex::new(-1.1349266739157249, 0.7195873283354851),
-            Complex::new(1.9571847859015015, -0.0155870261428106),
-            Complex::new(-0.3053291301765327, -0.3228826230849507),
-            Complex::new(-1.2794943650481012, 1.0562299986247101),
-            Complex::new(-1.0230989237260295, 1.2480143960716876),
-            Complex::new(-0.12247237569297761, 0.3272816248868606),
-            Complex::new(1.0559751943030367, 0.48313771018340235),
-            Complex::new(-0.15738713556020276, 0.1087502339196228),
-            Complex::new(1.0365834298899586, -2.442588929049296),
-            Complex::new(-0.08314941455304314, 0.0),
-            Complex::new(1.0365834298899586, 2.442588929049296),
-            Complex::new(-0.15738713556020276, -0.1087502339196228),
-            Complex::new(1.0559751943030367, -0.48313771018340235),
-            Complex::new(-0.12247237569297761, -0.3272816248868606),
-            Complex::new(-1.0230989237260295, -1.2480143960716876),
-            Complex::new(-1.2794943650481012, -1.0562299986247101),
-            Complex::new(-0.3053291301765327, 0.3228826230849507),
-            Complex::new(1.9571847859015015, 0.0155870261428106),
-            Complex::new(-1.1349266739157249, -0.7195873283354851),
-            Complex::new(0.9240323845693825, -0.588395230248971),
-            Complex::new(1.151341674477084, 0.23629347172720028),
-        ];
-        let wrkspace: Vec<Complex<Float>> = vec![Complex::zero(), input.len()];
-    }
-    #[test]
-    fn forward_fft2d() {
-        // We compare our fft2 to numpy's implementation.
+    fn get_2d_input() -> Vec<Complex<Float>> {
         let input: Vec<Complex<Float>> = vec![
             Complex::new(0.7739560485559633, 0.0),
             Complex::new(0.4388784397520523, 0.0),
@@ -467,6 +411,87 @@ pub mod tests {
             Complex::new(0.04925411992759399, 0.0),
             Complex::new(0.3736141384595716, 0.0),
         ];
+        let sim = build_test_sim();
+        assert_eq!(sim.size_x, 24);
+        assert_eq!(sim.size_y, 12);
+        assert_eq!(input.len(), 12 * 24);
+
+        input
+    }
+    #[test]
+    fn forward_fft() {
+        // Test that the RustFFT agrees with Numpy
+        let mut input: Vec<Complex<Float>> = vec![
+            Complex::new(0.7739560485559633, 0.0),
+            Complex::new(0.4388784397520523, 0.0),
+            Complex::new(0.8585979199113825, 0.0),
+            Complex::new(0.6973680290593639, 0.0),
+            Complex::new(0.09417734788764953, 0.0),
+            Complex::new(0.9756223516367559, 0.0),
+            Complex::new(0.761139701990353, 0.0),
+            Complex::new(0.7860643052769538, 0.0),
+            Complex::new(0.12811363267554587, 0.0),
+            Complex::new(0.45038593789556713, 0.0),
+            Complex::new(0.37079802423258124, 0.0),
+            Complex::new(0.9267649888486018, 0.0),
+            Complex::new(0.6438651200806645, 0.0),
+            Complex::new(0.82276161327083, 0.0),
+            Complex::new(0.44341419882733113, 0.0),
+            Complex::new(0.2272387217847769, 0.0),
+            Complex::new(0.5545847870158348, 0.0),
+            Complex::new(0.06381725610417532, 0.0),
+            Complex::new(0.8276311719925821, 0.0),
+            Complex::new(0.6316643991220648, 0.0),
+            Complex::new(0.7580877400853738, 0.0),
+            Complex::new(0.35452596812986836, 0.0),
+            Complex::new(0.9706980243949033, 0.0),
+            Complex::new(0.8931211213221977, 0.0),
+        ];
+
+        let out: Vec<Complex<Float>> = vec![
+            Complex::new(14.453276849853372, 0.0),
+            Complex::new(1.151341674477084, -0.23629347172720028),
+            Complex::new(0.9240323845693825, 0.588395230248971),
+            Complex::new(-1.1349266739157249, 0.7195873283354851),
+            Complex::new(1.9571847859015015, -0.0155870261428106),
+            Complex::new(-0.3053291301765327, -0.3228826230849507),
+            Complex::new(-1.2794943650481012, 1.0562299986247101),
+            Complex::new(-1.0230989237260295, 1.2480143960716876),
+            Complex::new(-0.12247237569297761, 0.3272816248868606),
+            Complex::new(1.0559751943030367, 0.48313771018340235),
+            Complex::new(-0.15738713556020276, 0.1087502339196228),
+            Complex::new(1.0365834298899586, -2.442588929049296),
+            Complex::new(-0.08314941455304314, 0.0),
+            Complex::new(1.0365834298899586, 2.442588929049296),
+            Complex::new(-0.15738713556020276, -0.1087502339196228),
+            Complex::new(1.0559751943030367, -0.48313771018340235),
+            Complex::new(-0.12247237569297761, -0.3272816248868606),
+            Complex::new(-1.0230989237260295, -1.2480143960716876),
+            Complex::new(-1.2794943650481012, -1.0562299986247101),
+            Complex::new(-0.3053291301765327, 0.3228826230849507),
+            Complex::new(1.9571847859015015, 0.0155870261428106),
+            Complex::new(-1.1349266739157249, -0.7195873283354851),
+            Complex::new(0.9240323845693825, -0.588395230248971),
+            Complex::new(1.151341674477084, 0.23629347172720028),
+        ];
+        let mut wrkspace: Vec<Complex<Float>> = vec![Complex::zero(); input.len()];
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(input.len());
+        let mut xscratch = vec![Complex::zero(); fft.get_outofplace_scratch_len()];
+
+        assert_eq!(input.len(), wrkspace.len());
+
+        fft.process_outofplace_with_scratch(&mut input, &mut wrkspace, &mut xscratch);
+        assert_eq!(out.len(), wrkspace.len());
+        for (v1, v2) in wrkspace.iter().zip(out) {
+            assert!((v1.re - v2.re).abs() < E_TOL);
+            assert!((v1.im - v2.im).abs() < E_TOL);
+        }
+    }
+    #[test]
+    fn forward_fft2d() {
+        // We compare our fft2 to numpy's implementation.
+        let input = get_2d_input();
         let out: Vec<Complex<Float>> = vec![
             Complex::new(138.5114607251621, 0.0),
             Complex::new(-1.27440962315266, 0.753048308479376),
@@ -759,16 +784,35 @@ pub mod tests {
         ];
         let sim = build_test_sim();
         let mut in_fld = Field::new(&sim);
-        let mut wrkspace = Field::new(&sim);
         let mut fft_2d = Fft2D::new(&sim);
         assert_eq!(in_fld.spectral.len(), input.len());
         in_fld.spectral = input;
         fft_2d.fft(&mut in_fld);
         assert_eq!(in_fld.spectral.len(), out.len());
-        //for (v1, v2) in in_fld.spectral.iter().zip(out) {
-        //    assert_eq!(v1.re, v2.re);
-        //assert!((v1.re - v2.re) < E_TOL);
-        //assert!((v1.im - v2.im) < E_TOL);
-        //}
+        for (v1, v2) in in_fld.spectral.iter().zip(out) {
+            // assert_eq!(v1.re, v2.re);
+            assert!((v1.re - v2.re) < E_TOL);
+            assert!((v1.im - v2.im) < E_TOL);
+        }
+    }
+
+    #[test]
+    fn transpose() {
+        let mut input = get_2d_input();
+        let sim = build_test_sim();
+        let mut fft_2d = Fft2D::new(&sim);
+        Fft2D::transpose_out_of_place(&mut input, &mut fft_2d.wrkspace, &mut fft_2d.field_size);
+        let transpose_dim = FieldDim {
+            size_x: fft_2d.field_size.size_y,
+            size_y: fft_2d.field_size.size_x,
+        };
+
+        for i in 0..fft_2d.field_size.size_y {
+            for j in 0..fft_2d.field_size.size_x {
+                let in_ind = transpose_dim.get_index(Pos { row: j, col: i });
+                let out_ind = fft_2d.field_size.get_index(Pos { row: i, col: j });
+                assert_eq!(input[in_ind], fft_2d.wrkspace[out_ind]);
+            }
+        }
     }
 }

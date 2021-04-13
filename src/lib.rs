@@ -19,10 +19,10 @@ pub type Float = f32;
 // some helpers to make the unit tests pass in both
 // double precision and single precision modes
 #[cfg(feature = "dprec")]
-pub const E_TOL: Float = 1E-15;
+pub const E_TOL: Float = 1E-4;
 
 #[cfg(not(feature = "dprec"))]
-pub const E_TOL: Float = 1E-6;
+pub const E_TOL: Float = 1E-5;
 
 #[derive(Deserialize)]
 pub struct Config {
