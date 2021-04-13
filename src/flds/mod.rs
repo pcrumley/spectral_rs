@@ -92,7 +92,7 @@ impl Flds {
 
         // Take fft of currents
         for current in &mut [&mut self.j_x, &mut self.j_y, &mut self.j_z, &mut self.dsty] {
-            self.fft_2d.fft(current, &mut self.wrkspace);
+            self.fft_2d.fft(current);
         }
 
         // clean k=0 contributions from currents
@@ -114,7 +114,7 @@ impl Flds {
         }
         // Take fft of electric fields
         for e_fld in &mut [&mut self.e_x, &mut self.e_y, &mut self.e_z] {
-            self.fft_2d.fft(e_fld, &mut self.wrkspace);
+            self.fft_2d.fft(e_fld);
         }
 
         // push on electric field
@@ -268,7 +268,7 @@ impl Flds {
             &mut self.e_y,
             &mut self.e_z,
         ] {
-            self.fft_2d.inv_fft(fld, &mut self.wrkspace);
+            self.fft_2d.inv_fft(fld);
         }
         // copy that fft to real array
         let mut im_sum = 0.0;

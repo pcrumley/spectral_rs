@@ -1,88 +1,115 @@
-use crate::flds::field::Field;
+use crate::flds::field::{Field, FieldDim};
 use crate::{Float, Sim};
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
 
 pub struct Fft2D {
-    size_x: usize,
-    size_y: usize,
+    field_size: FieldDim,
     fft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
     ifft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
     fft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
     ifft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
     xscratch: Vec<Complex<Float>>,
     yscratch: Vec<Complex<Float>>,
+    wrkspace: Vec<Complex<Float>>,
 }
 
 impl Fft2D {
     pub fn new(sim: &Sim) -> Fft2D {
         let mut planner = FftPlanner::new();
-        let fft_x = planner.plan_fft_forward(sim.size_x);
-        let ifft_x = planner.plan_fft_inverse(sim.size_x);
-        let fft_y = planner.plan_fft_forward(sim.size_y);
-        let ifft_y = planner.plan_fft_inverse(sim.size_y);
-        let xscratch = vec![Complex::zero(); fft_x.get_outofplace_scratch_len()];
-        let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
-
-        Fft2D {
+        let field_size = FieldDim {
             size_x: sim.size_x,
             size_y: sim.size_y,
+        };
+        let fft_x = planner.plan_fft_forward(field_size.size_x);
+        let ifft_x = planner.plan_fft_inverse(field_size.size_x);
+        let fft_y = planner.plan_fft_forward(field_size.size_y);
+        let ifft_y = planner.plan_fft_inverse(field_size.size_y);
+        let xscratch = vec![Complex::zero(); fft_x.get_outofplace_scratch_len()];
+        let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
+        let wrkspace = vec![Complex::zero(); sim.size_x * sim.size_y];
+
+        Fft2D {
+            field_size,
             fft_x,
             ifft_x,
             fft_y,
             ifft_y,
             xscratch,
             yscratch,
+            wrkspace,
+        }
+    }
+    fn transpose_out_of_place(
+        in_vec: &mut Vec<Complex<Float>>,
+        out_vec: &mut Vec<Complex<Float>>,
+        dim: &FieldDim,
+    ) {
+        // check to make sure the two vecs are the same size
+        let size_x = dim.size_x;
+        let size_y = dim.size_y;
+
+        if !cfg!(feature = "unchecked") {
+            assert_eq!(in_vec.len(), out_vec.len());
+            assert_eq!(in_vec.len(), size_x * size_y);
+        }
+        for i in 0..size_y {
+            for j in 0..size_x {
+                unsafe {
+                    // If you don't trust this unsafe section,
+                    // run the code with the checked feature
+                    // len(out_fld) == len(in_fld)
+                    // && size_y * size_x == len(out_fld)
+                    *out_vec.get_unchecked_mut(i * size_x + j) =
+                        *in_vec.get_unchecked(j * size_y + i);
+                }
+                // bounds checked version
+                // out_fld[i * sim.size_x + j] = in_fld[j * sim.size_y + i];
+            }
         }
     }
 
-    pub fn fft(&mut self, fld: &mut Field, wrkspace: &mut Field) {
+    pub fn fft(&mut self, fld: &mut Field) {
         if !cfg!(feature = "unchecked") {
-            assert_eq!(self.size_x, fld.no_ghost_dim.size_x);
-            assert_eq!(self.size_y, fld.no_ghost_dim.size_y);
-            assert_eq!(self.size_x, wrkspace.no_ghost_dim.size_x);
-            assert_eq!(self.size_y, wrkspace.no_ghost_dim.size_y);
+            assert_eq!(self.field_size, fld.no_ghost_dim);
         }
 
         self.fft_x.process_outofplace_with_scratch(
             &mut fld.spectral,
-            &mut wrkspace.spectral,
+            &mut self.wrkspace,
             &mut self.xscratch,
         );
 
-        wrkspace.transpose_spect_out_of_place(fld);
+        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &self.field_size);
         self.fft_y.process_outofplace_with_scratch(
             &mut fld.spectral,
-            &mut wrkspace.spectral,
+            &mut self.wrkspace,
             &mut self.yscratch,
         );
 
-        wrkspace.transpose_spect_out_of_place(fld);
+        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &self.field_size);
     }
 
-    pub fn inv_fft(&mut self, fld: &mut Field, wrkspace: &mut Field) {
+    pub fn inv_fft(&mut self, fld: &mut Field) {
         if !cfg!(feature = "unchecked") {
-            assert_eq!(self.size_x, fld.no_ghost_dim.size_x);
-            assert_eq!(self.size_y, fld.no_ghost_dim.size_y);
-            assert_eq!(self.size_x, wrkspace.no_ghost_dim.size_x);
-            assert_eq!(self.size_y, wrkspace.no_ghost_dim.size_y);
+            assert_eq!(self.field_size, fld.no_ghost_dim);
         }
 
         self.ifft_x.process_outofplace_with_scratch(
             &mut fld.spectral,
-            &mut wrkspace.spectral,
+            &mut self.wrkspace,
             &mut self.xscratch,
         );
 
-        wrkspace.transpose_spect_out_of_place(fld);
+        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &self.field_size);
         self.ifft_y.process_outofplace_with_scratch(
             &mut fld.spectral,
-            &mut wrkspace.spectral,
+            &mut self.wrkspace,
             &mut self.yscratch,
         );
 
-        wrkspace.transpose_spect_out_of_place(fld);
+        Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &self.field_size);
     }
 }
 
@@ -145,8 +172,7 @@ pub mod tests {
             Complex::new(0.9240323845693825, -0.588395230248971),
             Complex::new(1.151341674477084, 0.23629347172720028),
         ];
-        let wrkspace: Vec<Float> = vec![Complex::zero(), input.len()];
-
+        let wrkspace: Vec<Complex<Float>> = vec![Complex::zero(), input.len()];
     }
     #[test]
     fn forward_fft2d() {
@@ -737,7 +763,7 @@ pub mod tests {
         let mut fft_2d = Fft2D::new(&sim);
         assert_eq!(in_fld.spectral.len(), input.len());
         in_fld.spectral = input;
-        fft_2d.fft(&mut in_fld, &mut wrkspace);
+        fft_2d.fft(&mut in_fld);
         assert_eq!(in_fld.spectral.len(), out.len());
         //for (v1, v2) in in_fld.spectral.iter().zip(out) {
         //    assert_eq!(v1.re, v2.re);

@@ -7,6 +7,7 @@ pub struct Pos {
     pub col: usize,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct FieldDim {
     pub size_x: usize,
     pub size_y: usize,
@@ -64,36 +65,6 @@ impl Field {
                 size_x: sim.size_x,
                 size_y: sim.size_y,
             },
-        }
-    }
-
-    pub fn transpose_spect_out_of_place(&self, out_fld: &mut Field) {
-        // check to make sure the two vecs are the same size
-        let in_vec = &self.spectral;
-        let out_vec = &mut out_fld.spectral;
-        let size_x = self.no_ghost_dim.size_x;
-        let size_y = self.no_ghost_dim.size_y;
-
-        if !cfg!(feature = "unchecked") {
-            assert_eq!(size_x, out_fld.no_ghost_dim.size_x);
-            assert_eq!(size_y, out_fld.no_ghost_dim.size_y);
-
-            assert_eq!(in_vec.len(), out_vec.len());
-            assert_eq!(in_vec.len(), size_x * size_y);
-        }
-        for i in 0..size_y {
-            for j in 0..size_x {
-                unsafe {
-                    // If you don't trust this unsafe section,
-                    // run the code with the checked feature
-                    // len(out_fld) == len(in_fld)
-                    // && size_y * size_x == len(out_fld)
-                    *out_vec.get_unchecked_mut(i * size_x + j) =
-                        *in_vec.get_unchecked(j * size_y + i);
-                }
-                // bounds checked version
-                // out_fld[i * sim.size_x + j] = in_fld[j * sim.size_y + i];
-            }
         }
     }
 
