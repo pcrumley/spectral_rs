@@ -168,7 +168,7 @@ impl Prtl {
                     *px *= -sgn;
                     *dx *= -sgn;
                 } else {
-                    *dx -= 1.0;
+                    *dx += 1.0;
                     *ix -= 1;
                     *px *= -1.0;
                 }
@@ -208,7 +208,7 @@ impl Prtl {
         let csqinv = 1. / (sim.c * sim.c);
         let beta_inj = -Float::sqrt(1. - sim.gamma_inj.powi(-2));
         // println!("{}", beta_inj);
-        if true {
+        if false {
             let mut rng = thread_rng();
 
             for (px, py, pz, psa) in izip!(&mut self.px, &mut self.py, &mut self.pz, &mut self.psa)
@@ -235,7 +235,7 @@ impl Prtl {
             }
         } else {
             for (px, psa) in izip!(&mut self.px, &mut self.psa) {
-                *px = -sim.c * sim.gamma_inj * beta_inj;
+                *px = sim.c * sim.gamma_inj * beta_inj;
                 *psa = 1.0 + (*px * *px) * csqinv;
                 *psa = psa.sqrt();
             }
