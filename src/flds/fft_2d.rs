@@ -91,7 +91,6 @@ impl Fft2D {
         );
 
         Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
-
     }
 
     pub fn inv_fft(&mut self, fld: &mut Field) {
@@ -113,12 +112,11 @@ impl Fft2D {
         );
 
         Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
-        
+
         let norm = (fld.spectral.len() as Float).powi(-1);
         for v in fld.spectral.iter_mut() {
-            *v *= norm; 
+            *v *= norm;
         }
-
     }
 }
 
