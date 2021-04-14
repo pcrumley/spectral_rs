@@ -142,9 +142,13 @@ impl Prtl {
             }
         } else {
             // hit the wall at right hand side
-            if !cfg!(feature = "unchecked") {
-                assert!(sim.delta < sim.size_x);
-            }
+            /*
+             * This is asserted at sim creation.
+             *
+             * if !cfg!(feature = "unchecked") {
+             *   assert!(2 * sim.delta < sim.size_x);
+             * }
+             */
             let wall_loc = sim.size_x + 1 - sim.delta;
             if !cfg!(feature = "unchecked") {
                 assert!(
@@ -154,6 +158,14 @@ impl Prtl {
                         .max()
                         .expect("Could not find max of prtl arr. should never happen")
                         <= wall_loc + 1
+                );
+                assert!(
+                    *self
+                        .ix
+                        .iter()
+                        .min()
+                        .expect("Could not find min of prtl arr. should never happen")
+                        > sim.delta - 1
                 );
             }
             for (ix, dx, px) in izip!(self.ix.iter_mut(), self.dx.iter_mut(), self.px.iter_mut()) {
@@ -206,7 +218,7 @@ impl Prtl {
     }
     fn initialize_velocities(&mut self, sim: &Sim) {
         let csqinv = 1. / (sim.c * sim.c);
-        let beta_inj = -Float::sqrt(1. - sim.gamma_inj.powi(-2));
+        let beta_inj = Float::sqrt(1. - sim.gamma_inj.powi(-2));
         // println!("{}", beta_inj);
         if false {
             let mut rng = thread_rng();

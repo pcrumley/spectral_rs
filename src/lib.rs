@@ -1,8 +1,10 @@
 pub mod flds;
-mod prtls;
+pub mod prtls;
+pub mod save;
 
 use flds::Flds;
 use prtls::Prtl;
+use save::save_output;
 use serde::Deserialize;
 use std::fs;
 
@@ -24,19 +26,19 @@ pub const E_TOL: Float = 1E-4;
 #[cfg(not(feature = "dprec"))]
 pub const E_TOL: Float = 1E-5;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Config {
     pub params: Params,
     pub setup: Setup,
     pub output: Output,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Setup {
     pub t_final: u32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Output {
     pub track_prtls: bool,
     pub write_output: bool,
@@ -46,7 +48,7 @@ pub struct Output {
     pub istep: usize,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Params {
     pub size_x: usize,
     pub size_y: usize,
@@ -62,23 +64,57 @@ impl Config {
     pub fn new() -> Result<Config> {
         let contents =
             fs::read_to_string("config.toml").context("Could not open the config.toml file")?;
-        toml::from_str(&contents).with_context(|| "Could not parse Config file")
+        let cfg: Config =
+            toml::from_str(&contents).with_context(|| "Could not parse Config file")?;
+
+        // the number of cells must be even for the fft algorithm to work.
+        if cfg.params.size_x % 2 != 0 || cfg.params.size_y % 2 != 0 {
+            let msg = match (cfg.params.size_x % 2 == 0, cfg.params.size_y % 2 == 0) {
+                (true, false) => "y",
+                (false, true) => "x",
+                (false, false) => "x & y",
+                (true, true) => unreachable!(),
+            };
+            return Err(anyhow::Error::msg(format!(
+                "Number of cells in {} direction must be even",
+                msg
+            )));
+        }
+        if cfg.params.size_y % 2 != 0 {
+            return Err(anyhow::Error::msg(
+                "Number of cells in y direction must be even",
+            ));
+        }
+        if cfg.params.delta * 2 >= cfg.params.size_x {
+            return Err(anyhow::Error::msg(
+                "Delta must be less than 1/2 the size of size_x",
+            ));
+        }
+        if cfg.params.gamma_inj <= 1.0 {
+            return Err(anyhow::Error::msg("Lorentz factor must be greater than 1"));
+        }
+
+        if cfg.params.size_x % cfg.output.istep != 0 || cfg.params.size_y % cfg.output.istep != 0 {
+            let msg = match (
+                cfg.params.size_x % cfg.output.istep == 0,
+                cfg.params.size_y % cfg.output.istep == 0,
+            ) {
+                (true, false) => "y",
+                (false, true) => "x",
+                (false, false) => "x & y",
+                (true, true) => unreachable!(),
+            };
+            return Err(anyhow::Error::msg(format!(
+                "Number of cells in {} direction must be divisible by 2",
+                msg
+            )));
+        }
+
+        Ok(cfg)
     }
 }
 
 pub fn run(cfg: Config) -> Result<()> {
-    // the number of cells must be even for the fft algorithm to work.
-    if cfg.params.size_x % 2 != 0 {
-        return Err(anyhow::Error::msg(
-            "Number of cells in x direction must be even",
-        ));
-    }
-    if cfg.params.size_y % 2 != 0 {
-        return Err(anyhow::Error::msg(
-            "Number of cells in y direction must be even",
-        ));
-    }
-
     let sim = Sim::new(&cfg);
     let mut prtls = Vec::<Prtl>::new();
     // Add ions to prtls list
@@ -101,72 +137,8 @@ pub fn run(cfg: Config) -> Result<()> {
     */
     for t in 0..=sim.t_final {
         if cfg.output.write_output {
-            if t % cfg.output.output_interval == 0 {
-                let output_prefix = format!("output/dat_{:05}", t / cfg.output.output_interval);
-                fs::create_dir_all(&output_prefix).context("Unable to create output directory")?;
-                println!("saving prtls");
-                let x: Vec<Float> = prtls[0]
-                    .ix
-                    .iter()
-                    .zip(prtls[0].dx.iter())
-                    .step_by(cfg.output.stride)
-                    .map(|(&ix, &dx)| ix as Float + dx)
-                    .collect();
-
-                npy::to_file(format!("{}/x.npy", output_prefix), x)
-                    .context("Could not save x data to file")?;
-                let y: Vec<Float> = prtls[0]
-                    .iy
-                    .iter()
-                    .zip(prtls[0].dy.iter())
-                    .step_by(cfg.output.stride)
-                    .map(|(&iy, &dy)| iy as Float + dy)
-                    .collect();
-                npy::to_file(format!("{}/y.npy", output_prefix), y)
-                    .context("Could not save y prtl data")?;
-
-                let u: Vec<_> = prtls[0]
-                    .px
-                    .iter()
-                    .step_by(cfg.output.stride)
-                    .map(|&x| x / sim.c)
-                    .collect();
-
-                npy::to_file(format!("{}/u.npy", output_prefix), u)
-                    .context("Could not save u data to file")?;
-
-                let gam: Vec<_> = prtls[0]
-                    .psa
-                    .iter()
-                    .step_by(cfg.output.stride)
-                    .map(|&psa| psa)
-                    .collect();
-
-                npy::to_file(format!("{}/gam.npy", output_prefix), gam)
-                    .context("Error saving writing lorentz factor to file")?;
-            }
+            save_output(t, &sim, &flds, &prtls)?;
         }
-        /* TODO Add better way of tracking particles
-        if cfg.output.track_prtls {
-            if t % cfg.output.track_interval == 0 {
-                for (ix, iy, dx, dy, track, psa) in izip!(
-                    &prtls[0].ix,
-                    &prtls[0].iy,
-                    &prtls[0].dx,
-                    &prtls[0].dy,
-                    &prtls[0].track,
-                    &prtls[0].psa
-                ) {
-                    if *track {
-                        x_track.push((*ix as Float + *dx) / sim.c);
-                        y_track.push((*iy as Float + *dy) / sim.c);
-                        gam_track.push(*psa);
-                    }
-                }
-            }
-        }
-        */
-
         // Zero out currents and density
         println!("{}", t);
         for fld in &mut [
@@ -198,14 +170,6 @@ pub fn run(cfg: Config) -> Result<()> {
 
         sim.t.set(t);
     }
-    /*
-    if cfg.output.track_prtls {
-        fs::create_dir_all("output/trckd_prtl/")?;
-        npy::to_file("output/trckd_prtl/x.npy", x_track)?;
-        npy::to_file("output/trckd_prtl/y.npy", y_track)?;
-        npy::to_file("output/trckd_prtl/psa.npy", gam_track)?;
-    }
-    */
     Ok(())
 }
 
@@ -221,6 +185,7 @@ pub struct Sim {
     pub gamma_inj: Float, // Speed of upstream flow
     pub prtl_num: usize,  // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
     pub n_pass: u8,       // = 4; //Number of filter passes
+    pub config: Config,
 }
 
 pub fn build_test_sim() -> Sim {
@@ -266,6 +231,7 @@ impl Sim {
                 * (cfg.params.size_x - 2 * cfg.params.delta)
                 * cfg.params.size_y,
             n_pass: cfg.params.n_pass,
+            config: cfg.clone(),
         }
     }
 
