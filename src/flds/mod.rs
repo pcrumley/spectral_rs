@@ -65,9 +65,6 @@ impl Flds {
         self.j_x.copy_to_spectral();
         self.j_y.copy_to_spectral();
         self.j_z.copy_to_spectral();
-        // self.b_x.copy_to_spectral(sim);
-        // self.b_y.copy_to_spectral(sim);
-        // self.b_z.copy_to_spectral(sim);
         self.e_x.copy_to_spectral();
         self.e_y.copy_to_spectral();
         self.e_z.copy_to_spectral();
@@ -202,16 +199,6 @@ impl Flds {
         // Filter out the Nyquist frequency component, because it can cause
         // spurious imaginary quantities to show up in real space.
 
-        // gonna do some unsafe code so need to have assert! here
-        if !cfg!(feature = "unchecked") {
-            let tot_cells = sim.size_x * sim.size_y;
-            for b_fld in &[&self.b_x_wrk, &self.b_y_wrk, &self.b_z_wrk] {
-                assert_eq!(tot_cells, b_fld.len());
-            }
-            for fld in &[&self.e_x, &self.e_y, &self.e_z] {
-                assert_eq!(tot_cells, fld.spectral.len());
-            }
-        }
         let ny_col_start = sim.size_x / 2;
         let ny_end = sim.size_x * sim.size_y;
         for fld in &mut [
@@ -222,11 +209,14 @@ impl Flds {
             &mut self.e_y.spectral,
             &mut self.e_z.spectral,
         ] {
+            // gonna do some unsafe code so need to have assert! here
+            if !cfg!(feature = "unchecked") {
+                assert!(ny_end == fld.len());
+            }
+
             for i in (ny_col_start..ny_end).step_by(sim.size_x) {
                 unsafe {
-                    // safe because the iterator returns values between 0 and
-                    // sim.size_x * sim.size_y exclusive and size of all these fields
-                    // was asserted to be sim_size_x * sim.size_y
+                    // safe because the assert above
                     *fld.get_unchecked_mut(i) = Complex::zero();
                 }
             }
@@ -271,7 +261,7 @@ impl Flds {
             self.fft_2d.inv_fft(fld);
         }
         // copy that fft to real array
-        let mut im_sum = 0.0;
+        // let mut im_sum = 0.0;
         for fld in &mut [
             &mut self.b_x,
             &mut self.b_y,
@@ -280,11 +270,12 @@ impl Flds {
             &mut self.e_y,
             &mut self.e_z,
         ] {
-            im_sum += fld.spectral.iter().map(|o| o.im.abs()).sum::<Float>()
-                / (fld.spectral.len() as Float);
+            /* im_sum += fld.spectral.iter().map(|o| o.im.abs()).sum::<Float>()
+            / (fld.spectral.len() as Float);
+            */
             fld.copy_to_spatial(&sim);
         }
-        println!("{}", im_sum);
+        // println!("{}", im_sum);
     }
 }
 
