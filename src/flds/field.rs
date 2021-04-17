@@ -362,7 +362,7 @@ impl Field {
 
     #[inline(always)]
     pub fn binomial_filter_2_d(&mut self, field_buf: &mut Field) {
-        let in_vec = &mut self.spatial;
+        let in_vec = &self.spatial;
         let size_x = self.no_ghost_dim.size_x;
         let size_y = self.no_ghost_dim.size_y;
         // wrkspace should be same size as fld
@@ -370,43 +370,46 @@ impl Field {
             assert!(in_vec.len() == field_buf.spatial.len());
             assert!(in_vec.len() == (size_x + 2) * (size_y + 2));
         }
+        let wrkspace = &mut field_buf.spatial;
+        for iy in 1..size_y + 1 {
+            for ix in 1..size_x + 1 {
+                let mut ijm1 = iy - 1;
+                let mut ijp1 = iy + 1;
+                let ij = iy * (2 + size_x);
+                ijm1 *= 2 + size_x;
+                ijp1 *= 2 + size_x;
+                // CALC WEIGHTS
+                // 2D binomial filter
+                // The weighting scheme prtl is in middle
+                // +------------------
+                // |  1  |  2  |  1  |
+                // -------------------
+                // |  2  |  4  |  2  |   X   1/16
+                // -------------------
+                // |  1  |  2  |  1  |
+                // -------------------
 
-        let weights: [Float; 3] = [0.25, 0.5, 0.25];
-        // account for ghost zones
-        // FIRST FILTER IN X-DIRECTION
-        {
-            // Scoping here to satisfy borrow checker
-            let wrkspace = &mut field_buf.spatial;
-            for i in ((size_x + 2)..(size_y + 1) * (size_x + 2)).step_by(size_x + 2) {
-                for j in 1..=size_x + 1 {
-                    wrkspace[i] = weights
-                        .iter()
-                        .zip(&in_vec[i + j - 1..=i + j + 1])
-                        .map(|(&w, &f)| w * f)
-                        .sum::<Float>();
+                // safe because of assertion that vec_size is (size_x + 2)* size_y+2)
+
+                unsafe {
+                    let mut res = 0.0625 * in_vec.get_unchecked(ijm1 + ix - 1);
+                    res += 0.125 * in_vec.get_unchecked(ijm1 + ix);
+                    res += 0.0625 * in_vec.get_unchecked(ijm1 + ix + 1);
+                    res += 0.125 * in_vec.get_unchecked(ij + ix - 1);
+                    res += 0.25 * in_vec.get_unchecked(ij + ix);
+                    res += 0.125 * in_vec.get_unchecked(ij + ix + 1);
+                    res += 0.0625 * in_vec.get_unchecked(ijp1 + ix - 1);
+                    res += 0.125 * in_vec.get_unchecked(ijp1 + ix);
+                    res += 0.0625 * in_vec.get_unchecked(ijp1 + ix + 1);
+                    *wrkspace.get_unchecked_mut(ij + ix) = res;
                 }
             }
         }
 
         field_buf.update_ghosts();
-
-        let wrkspace = &field_buf.spatial;
-        // NOW FILTER IN Y-DIRECTION AND PUT VALS IN in_vec
-        for i in ((size_x + 2)..(size_y + 1) * (size_x + 2)).step_by(size_x + 2) {
-            for j in 1..=size_x + 1 {
-                in_vec[i] = weights
-                    .iter()
-                    .zip(
-                        wrkspace[i + j - (size_x + 2)..=i + j + (size_x + 2)]
-                            .iter()
-                            .step_by(size_x + 2),
-                    )
-                    .map(|(&w, &f)| w * f)
-                    .sum::<Float>();
-            }
+        for (v1, v2) in self.spatial.iter_mut().zip(field_buf.spatial.iter()) {
+            *v1 = *v2;
         }
-
-        self.update_ghosts();
     }
 }
 #[cfg(test)]
@@ -1517,11 +1520,11 @@ pub mod tests {
         ];
         fld.spatial = input.clone();
         assert_eq!(sim.n_pass, 4);
-        for i in 0..sim.n_pass {
+        for _ in 0..sim.n_pass {
             fld.binomial_filter_2_d(&mut wrkspace);
         }
-        for (&v1, &v2) in fld.spatial.iter().zip(input.iter()) {
-            assert_eq!(v1, v2);
+        for (&v1, &v2) in fld.spatial.iter().zip(expected_out.spatial.iter()) {
+            assert!((v1 - v2).abs() < E_TOL);
         }
     }
 }
