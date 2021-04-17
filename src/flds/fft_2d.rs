@@ -873,4 +873,29 @@ pub mod tests {
             }
         }
     }
+
+    #[test]
+    fn fft_2d_roundtrip() {
+        let input = get_2d_input();
+        let sim = build_test_sim();
+        let mut in_fld = Field::new(&sim);
+        let mut fft_2d = Fft2D::new(&sim);
+        assert_eq!(in_fld.spectral.len(), input.len());
+        in_fld.spectral = get_2d_input();
+        fft_2d.fft(&mut in_fld);
+        // check that the value has changed
+        assert!(in_fld.spectral.iter().zip(input.iter()).any(|(v1, v2)| {
+            // assert_eq!(v1.re, v2.re);
+            ((v1.re - v2.re) > E_TOL) || ((v1.im - v2.im) > E_TOL)
+        }));
+
+        fft_2d.inv_fft(&mut in_fld);
+
+        assert_eq!(in_fld.spectral.len(), input.len());
+        for (v1, v2) in in_fld.spectral.iter().zip(input.iter()) {
+            // assert_eq!(v1.re, v2.re);
+            assert!((v1.re - v2.re) < E_TOL);
+            assert!((v1.im - v2.im) < E_TOL);
+        }
+    }
 }
