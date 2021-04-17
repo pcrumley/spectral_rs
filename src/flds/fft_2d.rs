@@ -493,6 +493,59 @@ pub mod tests {
             assert!((v1.im - v2.im).abs() < E_TOL);
         }
     }
+
+    #[test]
+    fn fft_1d_roundtrip() {
+        let mut input: Vec<Complex<Float>> = vec![
+            Complex::new(14.453276849853372, 0.0),
+            Complex::new(1.151341674477084, -0.23629347172720028),
+            Complex::new(0.9240323845693825, 0.588395230248971),
+            Complex::new(-1.1349266739157249, 0.7195873283354851),
+            Complex::new(1.9571847859015015, -0.0155870261428106),
+            Complex::new(-0.3053291301765327, -0.3228826230849507),
+            Complex::new(-1.2794943650481012, 1.0562299986247101),
+            Complex::new(-1.0230989237260295, 1.2480143960716876),
+            Complex::new(-0.12247237569297761, 0.3272816248868606),
+            Complex::new(1.0559751943030367, 0.48313771018340235),
+            Complex::new(-0.15738713556020276, 0.1087502339196228),
+            Complex::new(1.0365834298899586, -2.442588929049296),
+            Complex::new(-0.08314941455304314, 0.0),
+            Complex::new(1.0365834298899586, 2.442588929049296),
+            Complex::new(-0.15738713556020276, -0.1087502339196228),
+            Complex::new(1.0559751943030367, -0.48313771018340235),
+            Complex::new(-0.12247237569297761, -0.3272816248868606),
+            Complex::new(-1.0230989237260295, -1.2480143960716876),
+            Complex::new(-1.2794943650481012, -1.0562299986247101),
+            Complex::new(-0.3053291301765327, 0.3228826230849507),
+            Complex::new(1.9571847859015015, 0.0155870261428106),
+            Complex::new(-1.1349266739157249, -0.7195873283354851),
+            Complex::new(0.9240323845693825, -0.588395230248971),
+            Complex::new(1.151341674477084, 0.23629347172720028),
+        ];
+        let expected_out = input.clone();
+        let mut wrkspace: Vec<Complex<Float>> = vec![Complex::zero(); input.len()];
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(input.len());
+        let ifft = planner.plan_fft_inverse(input.len());
+        let mut scratch_1 = vec![Complex::zero(); fft.get_outofplace_scratch_len()];
+        let mut scratch_2 = vec![Complex::zero(); ifft.get_outofplace_scratch_len()];
+
+        assert_eq!(input.len(), wrkspace.len());
+
+        fft.process_outofplace_with_scratch(&mut input, &mut wrkspace, &mut scratch_1);
+        // zero out input
+        //
+        for v in input.iter_mut() {
+            *v *= 0.0;
+        }
+        // fft is un-normed so we need to norm it.
+        let norm = input.len() as Float;
+        ifft.process_outofplace_with_scratch(&mut wrkspace, &mut input, &mut scratch_2);
+        for (v1, v2) in input.iter().zip(expected_out) {
+            assert!((v1.re - v2.re * norm).abs() < E_TOL);
+            assert!((v1.im - v2.im * norm).abs() < E_TOL);
+        }
+    }
     #[test]
     fn forward_fft2d() {
         // We compare our fft2 to numpy's implementation.
