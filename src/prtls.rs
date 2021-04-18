@@ -246,11 +246,13 @@ impl Prtl {
                 *psa = psa.sqrt();
             }
         } else {
-            for (px, psa) in izip!(&mut self.px, &mut self.psa) {
-                *px = sim.c * sim.gamma_inj * beta_inj;
+            let mut flipper: Float = -1.0;
+            for (n, px, psa) in izip!(0..self.px.len(), &mut self.px, &mut self.psa) {
+                *px = flipper.powi(n as i32) * sim.c * sim.gamma_inj * beta_inj;
                 *psa = 1.0 + (*px * *px) * csqinv;
                 *psa = psa.sqrt();
             }
+            // println!("{:?}", self.px);
         }
     }
     pub(crate) fn boris_push(&mut self, sim: &Sim, flds: &Flds) {

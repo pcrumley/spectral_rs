@@ -1,11 +1,35 @@
-use crate::{flds::Flds, prtls::Prtl, Float, Sim};
+use crate::{
+    flds::{field::Field, Flds},
+    prtls::Prtl,
+    Float, Sim,
+};
 use anyhow::{Context, Result};
 
-pub(crate) fn save_output(t: u32, sim: &Sim, _flds: &Flds, prtls: &Vec<Prtl>) -> Result<()> {
+pub(crate) fn save_fld_spatial(fld: &Field, outdir: &str) -> Result<()> {
+    let size_x = fld.no_ghost_dim.size_x;
+    let size_y = fld.no_ghost_dim.size_y;
+    let spatial = &fld.spatial;
+    let mut out_vec: Vec<Float> = Vec::with_capacity(size_y * size_x);
+
+    for iy in 0..size_y {
+        let ij_ghosts = (iy + 1) * (size_x + 2);
+        out_vec.extend(spatial.iter().skip(ij_ghosts).take(size_x));
+    }
+
+    npy::to_file(format!("{}/flds/{}.npy", outdir, fld.name), out_vec)
+        .context(format!("Could not save {} data to file", fld.name))?;
+
+    Ok(())
+}
+
+pub(crate) fn save_output(t: u32, sim: &Sim, flds: &Flds, prtls: &Vec<Prtl>) -> Result<()> {
     let cfg = &sim.config;
     if t % cfg.output.output_interval == 0 {
         let output_prefix = format!("output/dat_{:05}", t / cfg.output.output_interval);
         std::fs::create_dir_all(&output_prefix).context("Unable to create output directory")?;
+
+        std::fs::create_dir_all(&format!("{}/flds", &output_prefix))
+            .context("Unable to create output directory")?;
         println!("saving prtls");
         let x: Vec<Float> = prtls[0]
             .ix
@@ -27,13 +51,13 @@ pub(crate) fn save_output(t: u32, sim: &Sim, _flds: &Flds, prtls: &Vec<Prtl>) ->
         npy::to_file(format!("{}/y.npy", output_prefix), y)
             .context("Could not save y prtl data")?;
 
-        let u: Vec<_> = prtls[0]
+        let u: Vec<Float> = prtls[0]
             .px
             .iter()
             .step_by(cfg.output.stride)
             .map(|&x| x / sim.c)
             .collect();
-
+        println!("{:?}", u);
         npy::to_file(format!("{}/u.npy", output_prefix), u)
             .context("Could not save u data to file")?;
 
@@ -46,6 +70,9 @@ pub(crate) fn save_output(t: u32, sim: &Sim, _flds: &Flds, prtls: &Vec<Prtl>) ->
 
         npy::to_file(format!("{}/gam.npy", output_prefix), gam)
             .context("Error saving writing lorentz factor to file")?;
+        for fld in &[&flds.e_x, &flds.e_y, &flds.e_z] {
+            save_fld_spatial(fld, &output_prefix)?;
+        }
     }
 
     Ok(())

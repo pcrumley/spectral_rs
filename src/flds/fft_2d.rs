@@ -841,7 +841,7 @@ pub mod tests {
             Complex::new(0.22704221699843447, 1.1641261321031933),
         ];
         let sim = build_test_sim();
-        let mut in_fld = Field::new(&sim);
+        let mut in_fld = Field::default(&sim);
         let mut fft_2d = Fft2D::new(&sim);
         assert_eq!(in_fld.spectral.len(), input.len());
         in_fld.spectral = input;
@@ -878,7 +878,7 @@ pub mod tests {
     fn fft_2d_roundtrip() {
         let input = get_2d_input();
         let sim = build_test_sim();
-        let mut in_fld = Field::new(&sim);
+        let mut in_fld = Field::default(&sim);
         let mut fft_2d = Fft2D::new(&sim);
         assert_eq!(in_fld.spectral.len(), input.len());
         in_fld.spectral = get_2d_input();

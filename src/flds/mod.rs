@@ -40,16 +40,16 @@ impl Flds {
         let wave_nums = WaveNumbers::new(sim);
 
         Flds {
-            e_x: Field::new(sim),
-            e_y: Field::new(sim),
-            e_z: Field::new(sim),
-            b_x: Field::new(sim),
-            b_y: Field::new(sim),
-            b_z: Field::new(sim),
-            j_x: Field::new(sim),
-            j_y: Field::new(sim),
-            j_z: Field::new(sim),
-            dsty: Field::new(sim),
+            e_x: Field::new(sim, "Ex".into()),
+            e_y: Field::new(sim, "Ey".into()),
+            e_z: Field::new(sim, "Ez".into()),
+            b_x: Field::new(sim, "Bx".into()),
+            b_y: Field::new(sim, "By".into()),
+            b_z: Field::new(sim, "Bz".into()),
+            j_x: Field::new(sim, "Jx".into()),
+            j_y: Field::new(sim, "Jy".into()),
+            j_z: Field::new(sim, "Jz".into()),
+            dsty: Field::new(sim, "Rho".into()),
             k_x: wave_nums.k_x,
             k_y: wave_nums.k_y,
             k_norm: wave_nums.k_norm,
@@ -57,7 +57,7 @@ impl Flds {
             b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             b_z_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
             fft_2d: Fft2D::new(sim),
-            wrkspace: Field::new(sim),
+            wrkspace: Field::default(sim),
         }
     }
     fn copy_spatial_to_spectral(&mut self, sim: &Sim) {

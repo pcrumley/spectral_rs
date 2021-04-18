@@ -18,6 +18,7 @@ pub struct Field {
     pub spectral: Vec<Complex<Float>>,
     pub with_ghost_dim: FieldDim,
     pub no_ghost_dim: FieldDim,
+    pub name: String,
 }
 
 impl FieldDim {
@@ -53,7 +54,7 @@ impl FieldDim {
     }
 }
 impl Field {
-    pub fn new(sim: &Sim) -> Field {
+    pub fn default(sim: &Sim) -> Field {
         Field {
             spatial: vec![0.0; (sim.size_y + 2) * (sim.size_x + 2)],
             spectral: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
@@ -65,6 +66,13 @@ impl Field {
                 size_x: sim.size_x,
                 size_y: sim.size_y,
             },
+            name: "".into(),
+        }
+    }
+    pub fn new(sim: &Sim, name: String) -> Field {
+        Field {
+            name,
+            ..Field::default(sim)
         }
     }
 
@@ -424,7 +432,7 @@ pub mod tests {
         let expected_complex_val: Vec<Complex<Float>> = vec![Complex::zero(); 24 * 12];
 
         let sim = build_test_sim();
-        let fld = Field::new(&sim);
+        let fld = Field::default(&sim);
         assert_eq!(fld.with_ghost_dim.size_x, sim.size_x + 2);
         assert_eq!(fld.with_ghost_dim.size_y, sim.size_y + 2);
         assert_eq!(fld.no_ghost_dim.size_x, sim.size_x);
@@ -450,7 +458,7 @@ pub mod tests {
     #[test]
     fn row_major_order() {
         let sim = build_test_sim();
-        let fld = Field::new(&sim);
+        let fld = Field::default(&sim);
         //iterate over rows as outer iter
 
         let mut index = 0;
@@ -536,7 +544,7 @@ pub mod tests {
         assert_eq!(sim.size_x * sim.size_y, expected_output.len());
         assert_eq!(input.len(), (sim.size_x + 2) * (sim.size_y + 2));
 
-        let mut test_fld = Field::new(&sim);
+        let mut test_fld = Field::default(&sim);
         test_fld.spatial = input.clone();
 
         test_fld.copy_to_spectral();
@@ -621,7 +629,7 @@ pub mod tests {
         assert_eq!(sim.size_x * sim.size_y, input.len());
         assert_eq!(expected_output.len(), (sim.size_x + 2) * (sim.size_y + 2));
 
-        let mut test_fld = Field::new(&sim);
+        let mut test_fld = Field::default(&sim);
 
         for (v1, v2) in test_fld.spectral.iter_mut().zip(input.iter()) {
             v1.re = *v2;
@@ -698,7 +706,7 @@ pub mod tests {
             1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3,
         ];
         let sim = build_test_sim();
-        let mut fld = Field::new(&sim);
+        let mut fld = Field::default(&sim);
         fld.spatial = input.clone();
         assert_eq!(fld.spatial.len(), expected_output.len());
         assert_eq!(fld.spatial.len(), (sim.size_x + 2) * (sim.size_y + 2));
@@ -766,7 +774,7 @@ pub mod tests {
             4.31, 4.51, 3.81, 4.21, 1.11, 1.11, 1.11, 1.11, 1.11, 1.11, 1.11, 1.11, 1.11, 1.11,
             1.11, 1.31, 1.31, 1.31, 1.31, 1.31, 1.31, 1.31, 1.31, 1.31, 1.31, 1.31, 3.81, 4.21,
         ];
-        let mut fld = Field::new(&build_test_sim());
+        let mut fld = Field::default(&build_test_sim());
         fld.spatial = input.clone();
         assert_eq!(input.len(), expected_output.len());
         assert_eq!(
@@ -783,9 +791,9 @@ pub mod tests {
     #[test]
     fn binomial_filter() {
         let sim = build_test_sim();
-        let mut fld = Field::new(&sim);
-        let mut wrkspace = Field::new(&sim);
-        let mut expected_out = Field::new(&sim);
+        let mut fld = Field::default(&sim);
+        let mut wrkspace = Field::default(&sim);
+        let mut expected_out = Field::default(&sim);
         let input = vec![
             0.6226363025150204,
             0.8736968516461667,
