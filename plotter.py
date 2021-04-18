@@ -17,3 +17,12 @@ plt.imshow(ey)
 plt.show()
 plt.imshow(ez)
 plt.show()
+
+(bx, by, bz) = (np.load(outdir + elm + ".npy").reshape(256, 256) for elm in ['Bx', 'By', 'Bz'])
+
+plt.imshow(bx)
+plt.show()
+plt.imshow(by)
+plt.show()
+plt.imshow(bz)
+plt.show()
