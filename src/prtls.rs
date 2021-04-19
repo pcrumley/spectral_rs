@@ -136,7 +136,7 @@ impl Prtl {
             for ix in self.ix.iter_mut() {
                 if *ix < 1 {
                     *ix += sim.size_x;
-                } else if *ix > sim.size_x {
+                } else if *ix > sim.size_x + 1 {
                     *ix -= sim.size_x;
                 }
             }

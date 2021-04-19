@@ -241,26 +241,26 @@ impl Sim {
         // The [i,j] position in the array. Slightly complicated because
         // Using a 1d vec to represent 2D array for speed.
         // Here is the layout if it were a 2d array
-        // --------------------------------
+        // +----------+--------+----------+
         // | ijm1 - 1 |  ijm1  | ijm1 + 1 |
-        // --------------------------------
+        // +----------+--------+----------+
         // |  ij - 1  |   ij   |  ij + 1  |
-        // --------------------------------
+        // +----------+--------+----------+
         // | ijp1 - 1 |  ijp1  | ijp1 + 1 |
-        // --------------------------------
+        // +----------+--------+----------+
 
         let mut ij: usize;
         let mut ijm1: usize;
         let mut ijp1: usize;
 
         // Similarly for the weights
-        // -------------------
+        // +-----+-----+-----+
         // | w00 | w01 | w02 |
-        // -------------------
+        // +-----+-----+-----+
         // | w10 | w11 | w12 |
-        // -------------------
+        // +-----+-----+-----+
         // | w20 | w21 | w22 |
-        // -------------------
+        // +-----+-----+-----+
 
         let mut w00: Float;
         let mut w01: Float;
@@ -477,15 +477,15 @@ impl Sim {
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
         //self.dsty *=0
-        prtl.update_position(self);
-        prtl.apply_bc(self);
+        //prtl.update_position(self);
+        //prtl.apply_bc(self);
 
         // Deposit currents
         self.deposit_current(prtl, flds);
 
         // UPDATE POS AGAIN!
-        prtl.update_position(self);
-        prtl.apply_bc(self);
+        //prtl.update_position(self);
+        //prtl.apply_bc(self);
         self.calc_density(&*prtl, flds);
     }
 }

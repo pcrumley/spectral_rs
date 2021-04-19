@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 #plt.plot(x, y, '.')
 #plt.show()
 
-outdir = "output/dat_00001/flds/"
+outdir = "output/dat_00000/flds/"
 
 (ex, ey, ez) = (np.load(outdir + elm + ".npy").reshape(256, 256) for elm in ['Ex', 'Ey', 'Ez'])
 
@@ -18,11 +18,11 @@ plt.show()
 plt.imshow(ez)
 plt.show()
 
-(bx, by, bz) = (np.load(outdir + elm + ".npy").reshape(256, 256) for elm in ['Bx', 'By', 'Bz'])
+(fx, fy, fz) = (np.load(outdir + elm + ".npy").reshape(256, 256) for elm in ['Jx', 'Jy', 'Jz'])
 
-plt.imshow(bx)
+plt.imshow(fx)
 plt.show()
-plt.imshow(by)
+plt.imshow(fy)
 plt.show()
-plt.imshow(bz)
+plt.imshow(fz)
 plt.show()
