@@ -711,6 +711,7 @@ pub mod tests {
         assert_eq!(fld.spatial.len(), expected_output.len());
         assert_eq!(fld.spatial.len(), (sim.size_x + 2) * (sim.size_y + 2));
         fld.deposit_ghosts();
+        assert_eq!(fld.spatial.len(), (sim.size_x + 2) * (sim.size_y + 2));
         for (v, expected_v) in fld.spatial.into_iter().zip(expected_output) {
             assert!((v - expected_v).abs() < E_TOL);
         }

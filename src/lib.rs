@@ -124,8 +124,12 @@ pub fn run(cfg: Config) -> Result<()> {
     prtls.push(Prtl::new(&sim, -1.0, 1.0, 1E-3));
 
     let mut flds = Flds::new(&sim);
+
     for prtl in prtls.iter_mut() {
         sim.move_and_deposit(prtl, &mut flds);
+    }
+    for fld in &mut [&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty] {
+        fld.deposit_ghosts();
     }
     /* TODO add better particle tracking
     let mut x_track =
@@ -157,6 +161,16 @@ pub fn run(cfg: Config) -> Result<()> {
         for prtl in prtls.iter_mut() {
             sim.move_and_deposit(prtl, &mut flds);
         }
+        for fld in &mut [&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty] {
+            fld.deposit_ghosts();
+        }
+        let abs_max = flds
+            .j_x
+            .spatial
+            .iter()
+            .max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap())
+            .unwrap();
+        println!("{}", abs_max);
 
         // solve field. This part is NOT finished
         println!("solving fields");
@@ -241,26 +255,26 @@ impl Sim {
         // The [i,j] position in the array. Slightly complicated because
         // Using a 1d vec to represent 2D array for speed.
         // Here is the layout if it were a 2d array
-        // --------------------------------
+        // +----------+--------+----------+
         // | ijm1 - 1 |  ijm1  | ijm1 + 1 |
-        // --------------------------------
+        // +----------+--------+----------+
         // |  ij - 1  |   ij   |  ij + 1  |
-        // --------------------------------
+        // +----------+--------+----------+
         // | ijp1 - 1 |  ijp1  | ijp1 + 1 |
-        // --------------------------------
+        // +----------+--------+----------+
 
         let mut ij: usize;
         let mut ijm1: usize;
         let mut ijp1: usize;
 
         // Similarly for the weights
-        // -------------------
+        // +-----+-----+-----+
         // | w00 | w01 | w02 |
-        // -------------------
+        // +-----+-----+-----+
         // | w10 | w11 | w12 |
-        // -------------------
+        // +-----+-----+-----+
         // | w20 | w21 | w22 |
-        // -------------------
+        // +-----+-----+-----+
 
         let mut w00: Float;
         let mut w01: Float;
@@ -382,10 +396,6 @@ impl Sim {
             }
             */
         }
-
-        flds.j_x.deposit_ghosts();
-        flds.j_y.deposit_ghosts();
-        flds.j_z.deposit_ghosts();
     }
 
     fn calc_density(&self, prtl: &Prtl, flds: &mut Flds) {
@@ -472,19 +482,16 @@ impl Sim {
                 dsty[ijp1 + ix + 1] += w22 * prtl.charge;
             */
         }
-        flds.dsty.deposit_ghosts();
     }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
-        //self.dsty *=0
-        prtl.update_position(self);
+        // prtl.update_position(self);
         prtl.apply_bc(self);
 
         // Deposit currents
         self.deposit_current(prtl, flds);
-
         // UPDATE POS AGAIN!
-        prtl.update_position(self);
+        // prtl.update_position(self);
         prtl.apply_bc(self);
         self.calc_density(&*prtl, flds);
     }

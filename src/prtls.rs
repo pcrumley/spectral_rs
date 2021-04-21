@@ -165,7 +165,7 @@ impl Prtl {
                         .iter()
                         .min()
                         .expect("Could not find min of prtl arr. should never happen")
-                        > sim.delta - 1
+                        < sim.delta - 1
                 );
             }
             for (ix, dx, px) in izip!(self.ix.iter_mut(), self.dx.iter_mut(), self.px.iter_mut()) {
@@ -206,7 +206,7 @@ impl Prtl {
                     self.ix[c1 + k] = j + 1; // +1 for ghost zone
 
                     let mut r1 = 1.0 / (2.0 * (sim.dens as Float));
-                    r1 = (2. * (k as Float) + 1.) * r1;
+                    r1 += (k as Float) / (sim.dens as Float);
                     self.dx[c1 + k] = r1 - 0.5;
                     self.dy[c1 + k] = r1 - 0.5;
                     self.tag[c1 + k] = (c1 + k) as u64;
@@ -215,6 +215,8 @@ impl Prtl {
                 // helper_arr = -.5+0.25+np.arange(dens)*.5
             }
         }
+        assert!(*self.ix.iter().max().unwrap() <= sim.size_x - sim.delta);
+        assert!(*self.ix.iter().min().unwrap() >= 1 + sim.delta);
     }
     fn initialize_velocities(&mut self, sim: &Sim) {
         let csqinv = 1. / (sim.c * sim.c);
