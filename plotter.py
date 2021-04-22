@@ -7,22 +7,10 @@ import matplotlib.pyplot as plt
 #plt.hist(x, bins=256)
 #plt.show()
 
-outdir = "output/dat_00001/flds/"
+outdir = "output/dat_00027/flds/"
 
-(ex, ey, ez) = (np.load(outdir + elm + ".npy").reshape(256, 256) for elm in ['Ex', 'Ey', 'Ez'])
+(ex, ey, ez) = (np.load(outdir + elm + ".npy").reshape(512, 2048) for elm in ['Bx', 'By', 'Bz'])
 
-plt.imshow(ex)
-plt.show()
-plt.imshow(ey)
-plt.show()
+#plt.imshow(np.sqrt(ex**2 + ey**2 +ez**2))
 plt.imshow(ez)
-plt.show()
-
-(fx, fy, fz) = (np.load(outdir + elm + ".npy").reshape(256, 256) for elm in ['Jx', 'Jy', 'Jz'])
-print(np.abs(fx).max())
-plt.imshow(fx)
-plt.show()
-plt.imshow(fy)
-plt.show()
-plt.imshow(fz)
 plt.show()

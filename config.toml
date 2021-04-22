@@ -1,10 +1,10 @@
 [setup]
-t_final = 5
+t_final = 16000
 
 [params]
-size_x = 256 
-size_y = 256 
-delta = 0
+size_x = 2048
+size_y = 512 
+delta = 64
 dt = 0.1 # In units 1/omega_pe
 c = 3.0 # This is really c/omega_pe. Don't touch this.
 dens = 2   # of prtls per species per cell
@@ -15,6 +15,6 @@ n_pass = 4 # Number of filter passes.
 track_prtls = true # need to think of a better way of doing this.
 track_interval = 100 # In timesteps
 write_output = true # save output tsteps
-output_interval = 1 # In timesteps
+output_interval = 50 # In timesteps
 stride = 1 # Prtl downsampling
 istep = 1 # Flds downsampling

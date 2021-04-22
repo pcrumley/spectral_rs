@@ -128,6 +128,7 @@ pub fn run(cfg: Config) -> Result<()> {
     for prtl in prtls.iter_mut() {
         sim.move_and_deposit(prtl, &mut flds);
     }
+
     for fld in &mut [&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty] {
         fld.deposit_ghosts();
     }
@@ -416,6 +417,7 @@ impl Sim {
         let mut w22: Float;
 
         let dsty = &mut flds.dsty.spatial;
+        let dens = &mut flds.dens.spatial;
         for (ix, iy, dx, dy) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy) {
             if !cfg!(feature = "unchecked") {
                 assert!(*iy > 0);
@@ -468,6 +470,16 @@ impl Sim {
                 *dsty.get_unchecked_mut(ijp1 + ix - 1) += w20 * prtl.charge;
                 *dsty.get_unchecked_mut(ijp1 + ix) += w21 * prtl.charge;
                 *dsty.get_unchecked_mut(ijp1 + ix + 1) += w22 * prtl.charge;
+
+                *dens.get_unchecked_mut(ijm1 + ix - 1) += w00;
+                *dens.get_unchecked_mut(ijm1 + ix) += w01;
+                *dens.get_unchecked_mut(ijm1 + ix + 1) += w02;
+                *dens.get_unchecked_mut(ij + ix - 1) += w10;
+                *dens.get_unchecked_mut(ij + ix) += w11;
+                *dens.get_unchecked_mut(ij + ix + 1) += w12;
+                *dens.get_unchecked_mut(ijp1 + ix - 1) += w20;
+                *dens.get_unchecked_mut(ijp1 + ix) += w21;
+                *dens.get_unchecked_mut(ijp1 + ix + 1) += w22;
             }
             /*
              * bounds checked version. not needed because of asssert above
@@ -485,13 +497,13 @@ impl Sim {
     }
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
-        // prtl.update_position(self);
+        prtl.update_position(self);
         prtl.apply_bc(self);
 
         // Deposit currents
         self.deposit_current(prtl, flds);
         // UPDATE POS AGAIN!
-        // prtl.update_position(self);
+        prtl.update_position(self);
         prtl.apply_bc(self);
         self.calc_density(&*prtl, flds);
     }
