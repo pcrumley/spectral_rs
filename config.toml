@@ -3,7 +3,7 @@ t_final = 16000
 
 [params]
 size_x = 2048
-size_y = 512 
+size_y = 256
 delta = 64
 dt = 0.1 # In units 1/omega_pe
 c = 3.0 # This is really c/omega_pe. Don't touch this.

@@ -129,7 +129,13 @@ pub fn run(cfg: Config) -> Result<()> {
         sim.move_and_deposit(prtl, &mut flds);
     }
 
-    for fld in &mut [&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty] {
+    for fld in &mut [
+        &mut flds.j_x,
+        &mut flds.j_y,
+        &mut flds.j_z,
+        &mut flds.dsty,
+        &mut flds.dens,
+    ] {
         fld.deposit_ghosts();
     }
     /* TODO add better particle tracking
@@ -151,6 +157,7 @@ pub fn run(cfg: Config) -> Result<()> {
             &mut flds.j_y.spatial,
             &mut flds.j_z.spatial,
             &mut flds.dsty.spatial,
+            &mut flds.dens.spatial,
         ] {
             for v in fld.iter_mut() {
                 *v = 0.0;
@@ -162,16 +169,15 @@ pub fn run(cfg: Config) -> Result<()> {
         for prtl in prtls.iter_mut() {
             sim.move_and_deposit(prtl, &mut flds);
         }
-        for fld in &mut [&mut flds.j_x, &mut flds.j_y, &mut flds.j_z, &mut flds.dsty] {
+        for fld in &mut [
+            &mut flds.j_x,
+            &mut flds.j_y,
+            &mut flds.j_z,
+            &mut flds.dsty,
+            &mut flds.dens,
+        ] {
             fld.deposit_ghosts();
         }
-        let abs_max = flds
-            .j_x
-            .spatial
-            .iter()
-            .max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap())
-            .unwrap();
-        println!("{}", abs_max);
 
         // solve field. This part is NOT finished
         println!("solving fields");
