@@ -6,23 +6,15 @@ import matplotlib.pyplot as plt
 #y = np.load('output/dat_00000/y.npy')
 #plt.hist(x, bins=256)
 #plt.show()
+for i in range(32, 62):
+    outdir = f"output/dat_{str(i).zfill(5)}/flds/"
 
-outdir = "output/dat_00001/flds/"
+    # (ex, ey, ez) = (np.load(outdir + elm + ".npy").reshape(512, 2048) for elm in ['Bx', 'By', 'Bz'])
+    dens = np.load(outdir + "Dens" + ".npy").reshape(256, 2048)
+    print(np.max(dens))
+    #plt.imshow(np.sqrt(ex**2 + ey**2 +ez**2))
+    plt.imshow(dens, cmap='inferno', vmin=0, vmax=18)
+    plt.xlim(1000,2048-64)
+    plt.axis('off')
+    plt.savefig(f'out{str(i).zfill(2)}.png',dpi=200, bbox_inches='tight', pad_inches=0)
 
-(ex, ey, ez) = (np.load(outdir + elm + ".npy").reshape(256, 256) for elm in ['Ex', 'Ey', 'Ez'])
-
-plt.imshow(ex)
-plt.show()
-plt.imshow(ey)
-plt.show()
-plt.imshow(ez)
-plt.show()
-
-(fx, fy, fz) = (np.load(outdir + elm + ".npy").reshape(256, 256) for elm in ['Jx', 'Jy', 'Jz'])
-print(np.abs(fx).max())
-plt.imshow(fx)
-plt.show()
-plt.imshow(fy)
-plt.show()
-plt.imshow(fz)
-plt.show()

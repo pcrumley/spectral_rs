@@ -71,7 +71,7 @@ pub(crate) fn save_output(t: u32, sim: &Sim, flds: &Flds, prtls: &Vec<Prtl>) -> 
             .context("Error saving writing lorentz factor to file")?;
         for fld in &[
             &flds.j_x, &flds.j_y, &flds.j_z, &flds.e_x, &flds.e_y, &flds.e_z, &flds.b_x, &flds.b_y,
-            &flds.b_z,
+            &flds.b_z, &flds.dens,
         ] {
             save_fld_spatial(fld, &output_prefix)?;
         }

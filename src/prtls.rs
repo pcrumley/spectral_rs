@@ -165,7 +165,7 @@ impl Prtl {
                         .iter()
                         .min()
                         .expect("Could not find min of prtl arr. should never happen")
-                        < sim.delta - 1
+                        > sim.delta
                 );
             }
             for (ix, dx, px) in izip!(self.ix.iter_mut(), self.dx.iter_mut(), self.px.iter_mut()) {
@@ -222,7 +222,7 @@ impl Prtl {
         let csqinv = 1. / (sim.c * sim.c);
         let beta_inj = Float::sqrt(1. - sim.gamma_inj.powi(-2));
         // println!("{}", beta_inj);
-        if false {
+        if true {
             let mut rng = thread_rng();
 
             for (px, py, pz, psa) in izip!(&mut self.px, &mut self.py, &mut self.pz, &mut self.psa)
@@ -249,10 +249,11 @@ impl Prtl {
             }
         } else {
             let mut flipper: Float = -1.0;
-            for (n, px, psa) in izip!(0..self.px.len(), &mut self.px, &mut self.psa) {
-                *px = flipper.powi(n as i32) * sim.c * sim.gamma_inj * beta_inj;
+            for (px, psa) in izip!(&mut self.px, &mut self.psa) {
+                *px = flipper * sim.c * sim.gamma_inj * beta_inj;
                 *psa = 1.0 + (*px * *px) * csqinv;
                 *psa = psa.sqrt();
+                flipper *= -1.0;
             }
             // println!("{:?}", self.px);
         }
