@@ -21,10 +21,10 @@ pub type Float = f32;
 // some helpers to make the unit tests pass in both
 // double precision and single precision modes
 #[cfg(feature = "dprec")]
-pub const E_TOL: Float = 1E-4;
+pub const E_TOL: Float = 1E-13;
 
 #[cfg(not(feature = "dprec"))]
-pub const E_TOL: Float = 1E-5;
+pub const E_TOL: Float = 1E-4;
 
 #[derive(Deserialize, Clone)]
 pub struct Config {
@@ -124,8 +124,19 @@ pub fn run(cfg: Config) -> Result<()> {
     prtls.push(Prtl::new(&sim, -1.0, 1.0, 1E-3));
 
     let mut flds = Flds::new(&sim);
+
     for prtl in prtls.iter_mut() {
         sim.move_and_deposit(prtl, &mut flds);
+    }
+
+    for fld in &mut [
+        &mut flds.j_x,
+        &mut flds.j_y,
+        &mut flds.j_z,
+        &mut flds.dsty,
+        &mut flds.dens,
+    ] {
+        fld.deposit_ghosts();
     }
     /* TODO add better particle tracking
     let mut x_track =
@@ -146,6 +157,7 @@ pub fn run(cfg: Config) -> Result<()> {
             &mut flds.j_y.spatial,
             &mut flds.j_z.spatial,
             &mut flds.dsty.spatial,
+            &mut flds.dens.spatial,
         ] {
             for v in fld.iter_mut() {
                 *v = 0.0;
@@ -156,6 +168,15 @@ pub fn run(cfg: Config) -> Result<()> {
         // deposit current. This part is finished.
         for prtl in prtls.iter_mut() {
             sim.move_and_deposit(prtl, &mut flds);
+        }
+        for fld in &mut [
+            &mut flds.j_x,
+            &mut flds.j_y,
+            &mut flds.j_z,
+            &mut flds.dsty,
+            &mut flds.dens,
+        ] {
+            fld.deposit_ghosts();
         }
 
         // solve field. This part is NOT finished
@@ -243,7 +264,7 @@ impl Sim {
         // Here is the layout if it were a 2d array
         // +----------+--------+----------+
         // | ijm1 - 1 |  ijm1  | ijm1 + 1 |
-        // +----------+-------------------+
+        // +----------+--------+----------+
         // |  ij - 1  |   ij   |  ij + 1  |
         // +----------+--------+----------+
         // | ijp1 - 1 |  ijp1  | ijp1 + 1 |
@@ -382,10 +403,6 @@ impl Sim {
             }
             */
         }
-
-        flds.j_x.deposit_ghosts();
-        flds.j_y.deposit_ghosts();
-        flds.j_z.deposit_ghosts();
     }
 
     fn calc_density(&self, prtl: &Prtl, flds: &mut Flds) {
@@ -406,6 +423,7 @@ impl Sim {
         let mut w22: Float;
 
         let dsty = &mut flds.dsty.spatial;
+        let dens = &mut flds.dens.spatial;
         for (ix, iy, dx, dy) in izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy) {
             if !cfg!(feature = "unchecked") {
                 assert!(*iy > 0);
@@ -426,13 +444,13 @@ impl Sim {
             // CALC WEIGHTS
             // 2nd order
             // The weighting scheme prtl is in middle
-            // # ----------------------
+            // # +------+------+------+
             // # | w0,0 | w0,1 | w0,2 |
-            // # ----------------------
+            // # +------+------+------+
             // # | w1,0 | w1,1 | w1,2 |
-            // # ----------------------
+            // # +------+------+------+
             // # | w2,0 | w2,1 | w2,2 |
-            // # ----------------------
+            // # +------+------+------+
             w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
             w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
             w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
@@ -458,6 +476,16 @@ impl Sim {
                 *dsty.get_unchecked_mut(ijp1 + ix - 1) += w20 * prtl.charge;
                 *dsty.get_unchecked_mut(ijp1 + ix) += w21 * prtl.charge;
                 *dsty.get_unchecked_mut(ijp1 + ix + 1) += w22 * prtl.charge;
+
+                *dens.get_unchecked_mut(ijm1 + ix - 1) += w00;
+                *dens.get_unchecked_mut(ijm1 + ix) += w01;
+                *dens.get_unchecked_mut(ijm1 + ix + 1) += w02;
+                *dens.get_unchecked_mut(ij + ix - 1) += w10;
+                *dens.get_unchecked_mut(ij + ix) += w11;
+                *dens.get_unchecked_mut(ij + ix + 1) += w12;
+                *dens.get_unchecked_mut(ijp1 + ix - 1) += w20;
+                *dens.get_unchecked_mut(ijp1 + ix) += w21;
+                *dens.get_unchecked_mut(ijp1 + ix + 1) += w22;
             }
             /*
              * bounds checked version. not needed because of asssert above
@@ -472,17 +500,15 @@ impl Sim {
                 dsty[ijp1 + ix + 1] += w22 * prtl.charge;
             */
         }
-        flds.dsty.deposit_ghosts();
     }
+
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
-        //self.dsty *=0
         prtl.update_position(self);
         prtl.apply_bc(self);
 
         // Deposit currents
         self.deposit_current(prtl, flds);
-
         // UPDATE POS AGAIN!
         prtl.update_position(self);
         prtl.apply_bc(self);
