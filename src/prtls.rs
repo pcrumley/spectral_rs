@@ -309,13 +309,13 @@ impl Prtl {
             // CALC WEIGHTS
             // 2nd order
             // The weighting scheme prtl is in middle
-            // -------------------
+            // +-----+-----+-----+
             // | w00 | w01 | w02 |
-            // -------------------
+            // +-----+-----+-----+
             // | w10 | w11 | w12 |
-            // -------------------
+            // +-----+-----+-----+
             // | w20 | w21 | w22 |
-            // -------------------
+            // +-----+-----+-----+
             w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
             w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx);
             w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
@@ -339,7 +339,7 @@ impl Prtl {
             if !cfg!(feature = "unchecked") {
                 assert!(ijp1 + ix + 1 < e_x.len());
             }
-            // safe because of following assertion
+            // safe because of previous assertion
 
             unsafe {
                 ext = w00 * e_x.get_unchecked(ijm1 + ix - 1);
