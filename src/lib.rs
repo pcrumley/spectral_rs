@@ -6,8 +6,7 @@ use flds::Flds;
 use prtls::Prtl;
 use save::save_output;
 use serde::Deserialize;
-use std::fs;
-use std::time::SystemTime;
+use std::{fs, time::SystemTime};
 
 use anyhow::{Context, Result};
 use itertools::izip;
@@ -165,8 +164,7 @@ pub fn run(cfg: Config) -> Result<()> {
             }
         }
         println!("moving & dep prtl");
-
-        let move_time = SystemTime::now();
+        let dep_time = SystemTime::now();
         // deposit current. This part is finished.
         for prtl in prtls.iter_mut() {
             sim.move_and_deposit(prtl, &mut flds);
@@ -180,8 +178,8 @@ pub fn run(cfg: Config) -> Result<()> {
         ] {
             fld.deposit_ghosts();
         }
-        println!("{:?}", move_time.elapsed().unwrap());
 
+        println!("{:?}", dep_time.elapsed().unwrap());
         // solve field. This part is NOT finished
         println!("solving fields");
         let solve_time = SystemTime::now();
@@ -451,13 +449,13 @@ impl Sim {
             // CALC WEIGHTS
             // 2nd order
             // The weighting scheme prtl is in middle
-            // # ----------------------
+            // # +------+------+------+
             // # | w0,0 | w0,1 | w0,2 |
-            // # ----------------------
+            // # +------+------+------+
             // # | w1,0 | w1,1 | w1,2 |
-            // # ----------------------
+            // # +------+------+------+
             // # | w2,0 | w2,1 | w2,2 |
-            // # ----------------------
+            // # +------+------+------+
             w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx); // y0
             w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx); // y0
             w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx); // y0
@@ -508,6 +506,7 @@ impl Sim {
             */
         }
     }
+
     fn move_and_deposit(&self, prtl: &mut Prtl, flds: &mut Flds) {
         // FIRST we update positions of particles
         prtl.update_position(self);
