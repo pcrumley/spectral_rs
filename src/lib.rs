@@ -3,11 +3,11 @@ pub mod prtls;
 pub mod save;
 
 use flds::Flds;
-use std::time::SystemTime;
 use prtls::Prtl;
 use save::save_output;
 use serde::Deserialize;
 use std::fs;
+use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use itertools::izip;
@@ -181,13 +181,13 @@ pub fn run(cfg: Config) -> Result<()> {
             fld.deposit_ghosts();
         }
         println!("{:?}", move_time.elapsed().unwrap());
- 
+
         // solve field. This part is NOT finished
         println!("solving fields");
         let solve_time = SystemTime::now();
         flds.update(&sim);
         println!("{:?}", solve_time.elapsed().unwrap());
- 
+
         // push prtls finished
         println!("pushing prtl");
         let push_time = SystemTime::now();
