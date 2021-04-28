@@ -1,33 +1,49 @@
 use crate::flds::field::{Field, FieldDim};
 use crate::{Float, Sim};
+use rayon::prelude::*;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
 
 pub struct Fft2D {
     field_size: FieldDim,
-    fft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
-    ifft_x: std::sync::Arc<dyn rustfft::Fft<Float>>,
-    fft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
-    ifft_y: std::sync::Arc<dyn rustfft::Fft<Float>>,
-    xscratch: Vec<Complex<Float>>,
-    yscratch: Vec<Complex<Float>>,
+    fft_x: Vec<std::sync::Arc<dyn rustfft::Fft<Float>>>,
+    ifft_x: Vec<std::sync::Arc<dyn rustfft::Fft<Float>>>,
+    fft_y: Vec<std::sync::Arc<dyn rustfft::Fft<Float>>>,
+    ifft_y: Vec<std::sync::Arc<dyn rustfft::Fft<Float>>>,
+    scratch: Vec<Complex<Float>>,
     wrkspace: Vec<Complex<Float>>,
 }
 
 impl Fft2D {
     pub fn new(sim: &Sim) -> Fft2D {
-        let mut planner = FftPlanner::new();
+        let mut planner: Vec<_> = (0..sim.size_x.max(sim.size_y))
+            .map(|_| FftPlanner::new())
+            .collect();
         let field_size = FieldDim {
             size_x: sim.size_x,
             size_y: sim.size_y,
         };
-        let fft_x = planner.plan_fft_forward(field_size.size_x);
-        let ifft_x = planner.plan_fft_inverse(field_size.size_x);
-        let fft_y = planner.plan_fft_forward(field_size.size_y);
-        let ifft_y = planner.plan_fft_inverse(field_size.size_y);
-        let xscratch = vec![Complex::zero(); fft_x.get_outofplace_scratch_len()];
-        let yscratch = vec![Complex::zero(); fft_y.get_outofplace_scratch_len()];
+        let fft_x: Vec<_> = planner
+            .iter_mut()
+            .map(|plan| plan.plan_fft_forward(field_size.size_x))
+            .collect();
+        let ifft_x: Vec<_> = planner
+            .iter_mut()
+            .map(|plan| plan.plan_fft_inverse(field_size.size_x))
+            .collect();
+        let fft_y: Vec<_> = planner
+            .iter_mut()
+            .map(|plan| plan.plan_fft_forward(field_size.size_y))
+            .collect();
+        let ifft_y: Vec<_> = planner
+            .iter_mut()
+            .map(|plan| plan.plan_fft_inverse(field_size.size_y))
+            .collect();
+        let scratch_size =
+            (sim.size_y * sim.size_x).max(sim.size_y * fft_x[0].get_outofplace_scratch_len());
+        let scratch_size = scratch_size.max(sim.size_x * fft_y[0].get_outofplace_scratch_len());
+        let scratch = vec![Complex::zero(); scratch_size];
         let wrkspace = vec![Complex::zero(); sim.size_x * sim.size_y];
 
         Fft2D {
@@ -36,11 +52,11 @@ impl Fft2D {
             ifft_x,
             fft_y,
             ifft_y,
-            xscratch,
-            yscratch,
+            scratch,
             wrkspace,
         }
     }
+
     fn transpose_out_of_place(
         in_vec: &mut Vec<Complex<Float>>,
         out_vec: &mut Vec<Complex<Float>>,
@@ -73,22 +89,42 @@ impl Fft2D {
     }
 
     pub fn fft(&mut self, fld: &mut Field) {
+        // let xscratch_len = self.fft_x.get_outofplace_scratch_len();
+        // let size_x = self.field_size.size_x;
         if !cfg!(feature = "unchecked") {
             assert_eq!(self.field_size, fld.no_ghost_dim);
         }
-
-        self.fft_x.process_outofplace_with_scratch(
-            &mut fld.spectral,
-            &mut self.wrkspace,
-            &mut self.xscratch,
-        );
+        let size_x = self.field_size.size_x;
+        let scratch_x = self.fft_x[0].get_outofplace_scratch_len().max(1);
+        self.fft_x
+            .par_iter()
+            .zip(
+                fld.spectral.par_chunks_mut(size_x).zip(
+                    self.wrkspace
+                        .par_chunks_mut(size_x)
+                        .zip(self.scratch.par_chunks_mut(scratch_x)),
+                ),
+            )
+            .for_each(|(fft_x, (fld, (wrkspace, scratch)))| {
+                fft_x.process_outofplace_with_scratch(fld, wrkspace, scratch)
+            });
 
         Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
-        self.fft_y.process_outofplace_with_scratch(
-            &mut fld.spectral,
-            &mut self.wrkspace,
-            &mut self.yscratch,
-        );
+        let size_y = self.field_size.size_y;
+        let scratch_y = self.fft_y[0].get_outofplace_scratch_len().max(1);
+
+        self.fft_y
+            .par_iter()
+            .zip(
+                fld.spectral.par_chunks_mut(size_y).zip(
+                    self.wrkspace
+                        .par_chunks_mut(size_y)
+                        .zip(self.scratch.par_chunks_mut(scratch_y)),
+                ),
+            )
+            .for_each(|(fft_y, (fld, (wrkspace, scratch)))| {
+                fft_y.process_outofplace_with_scratch(fld, wrkspace, scratch)
+            });
 
         Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
     }
@@ -97,26 +133,42 @@ impl Fft2D {
         if !cfg!(feature = "unchecked") {
             assert_eq!(self.field_size, fld.no_ghost_dim);
         }
-
-        self.ifft_x.process_outofplace_with_scratch(
-            &mut fld.spectral,
-            &mut self.wrkspace,
-            &mut self.xscratch,
-        );
+        let size_x = self.field_size.size_x;
+        let scratch_x = self.ifft_x[0].get_outofplace_scratch_len().max(1);
+        self.ifft_x
+            .par_iter()
+            .zip(
+                fld.spectral.par_chunks_mut(size_x).zip(
+                    self.wrkspace
+                        .par_chunks_mut(size_x)
+                        .zip(self.scratch.par_chunks_mut(scratch_x)),
+                ),
+            )
+            .for_each(|(ifft_x, (fld, (wrkspace, scratch)))| {
+                ifft_x.process_outofplace_with_scratch(fld, wrkspace, scratch)
+            });
 
         Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
-        self.ifft_y.process_outofplace_with_scratch(
-            &mut fld.spectral,
-            &mut self.wrkspace,
-            &mut self.yscratch,
-        );
+
+        let size_y = self.field_size.size_y;
+        let scratch_y = self.ifft_y[0].get_outofplace_scratch_len().max(1);
+        self.ifft_y
+            .par_iter()
+            .zip(
+                fld.spectral.par_chunks_mut(size_y).zip(
+                    self.wrkspace
+                        .par_chunks_mut(size_y)
+                        .zip(self.scratch.par_chunks_mut(scratch_y)),
+                ),
+            )
+            .for_each(|(ifft_y, (fld, (wrkspace, scratch)))| {
+                ifft_y.process_outofplace_with_scratch(fld, wrkspace, scratch)
+            });
 
         Fft2D::transpose_out_of_place(&mut self.wrkspace, &mut fld.spectral, &mut self.field_size);
 
         let norm = (fld.spectral.len() as Float).powi(-1);
-        for v in fld.spectral.iter_mut() {
-            *v *= norm;
-        }
+        fld.spectral.par_iter_mut().for_each(|v| *v *= norm);
     }
 }
 
