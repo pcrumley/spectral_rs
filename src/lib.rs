@@ -3,6 +3,7 @@ pub mod prtls;
 pub mod save;
 
 use flds::Flds;
+use std::time::SystemTime;
 use prtls::Prtl;
 use save::save_output;
 use serde::Deserialize;
@@ -165,6 +166,7 @@ pub fn run(cfg: Config) -> Result<()> {
         }
         println!("moving & dep prtl");
 
+        let move_time = SystemTime::now();
         // deposit current. This part is finished.
         for prtl in prtls.iter_mut() {
             sim.move_and_deposit(prtl, &mut flds);
@@ -178,16 +180,21 @@ pub fn run(cfg: Config) -> Result<()> {
         ] {
             fld.deposit_ghosts();
         }
-
+        println!("{:?}", move_time.elapsed().unwrap());
+ 
         // solve field. This part is NOT finished
         println!("solving fields");
+        let solve_time = SystemTime::now();
         flds.update(&sim);
-
+        println!("{:?}", solve_time.elapsed().unwrap());
+ 
         // push prtls finished
         println!("pushing prtl");
+        let push_time = SystemTime::now();
         for prtl in prtls.iter_mut() {
             prtl.boris_push(&sim, &flds)
         }
+        println!("{:?}", push_time.elapsed().unwrap());
 
         sim.t.set(t);
     }

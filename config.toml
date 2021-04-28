@@ -1,5 +1,5 @@
 [setup]
-t_final = 100
+t_final = 500
 
 [params]
 size_x = 2048

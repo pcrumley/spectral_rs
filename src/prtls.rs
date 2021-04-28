@@ -3,6 +3,7 @@ use itertools::izip;
 use rand::prelude::*;
 use rand_distr::Standard;
 use rand_distr::StandardNormal;
+use rayon::prelude::*;
 
 pub(crate) struct Prtl {
     pub ix: Vec<usize>,
@@ -260,39 +261,21 @@ impl Prtl {
     }
     pub(crate) fn boris_push(&mut self, sim: &Sim, flds: &Flds) {
         // local vars we will use
-        let mut ijm1: usize;
-        let mut ijp1: usize;
-        let mut ij: usize;
 
         let csqinv = 1. / (sim.c * sim.c);
-        // for the weights
-        let mut w00: Float;
-        let mut w01: Float;
-        let mut w02: Float;
-        let mut w10: Float;
-        let mut w11: Float;
-        let mut w12: Float;
-        let mut w20: Float;
-        let mut w21: Float;
-        let mut w22: Float;
+        let beta = self.beta;
+        let alpha = self.alpha;
+        // get direct pointers to avoid unnecessary lookups
+        let e_x = &flds.e_x.spatial;
+        let e_y = &flds.e_y.spatial;
+        let e_z = &flds.e_z.spatial;
 
-        let mut ext: Float;
-        let mut eyt: Float;
-        let mut ezt: Float;
-        let mut bxt: Float;
-        let mut byt: Float;
-        let mut bzt: Float;
-        let mut ux: Float;
-        let mut uy: Float;
-        let mut uz: Float;
-        let mut uxt: Float;
-        let mut uyt: Float;
-        let mut uzt: Float;
-        // let mut pt: Float;
-        let mut gt: Float;
-        let mut boris: Float;
+        let b_x = &flds.b_x.spatial;
+        let b_y = &flds.b_y.spatial;
+        let b_z = &flds.b_z.spatial;
 
-        for (ix, iy, dx, dy, px, py, pz, psa) in izip!(
+        let size_x = sim.size_x;
+        (
             &self.ix,
             &self.iy,
             &self.dx,
@@ -300,206 +283,141 @@ impl Prtl {
             &mut self.px,
             &mut self.py,
             &mut self.pz,
-            &mut self.psa
-        ) {
-            if !cfg!(feature = "unchecked") {
-                assert!(*iy > 0);
-                assert!(*ix > 0);
-            }
-            ijm1 = iy - 1;
-            ijp1 = iy + 1;
-            ij = iy * (2 + sim.size_x);
-            ijm1 *= 2 + sim.size_x;
-            ijp1 *= 2 + sim.size_x;
-            // CALC WEIGHTS
-            // 2nd order
-            // The weighting scheme prtl is in middle
-            // +-----+-----+-----+
-            // | w00 | w01 | w02 |
-            // +-----+-----+-----+
-            // | w10 | w11 | w12 |
-            // +-----+-----+-----+
-            // | w20 | w21 | w22 |
-            // +-----+-----+-----+
-            w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
-            w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx);
-            w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
-            w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
-            w11 = (0.75 - dy * dy) * (0.75 - dx * dx);
-            w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
-            w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
-            w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx);
-            w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
+            &mut self.psa,
+        )
+            .into_par_iter().chunks(10000)
+            .for_each(|o| o.into_iter().for_each(|(ix, iy, dx, dy, px, py, pz, psa)| {
+                if !cfg!(feature = "unchecked") {
+                    assert!(*iy > 0);
+                    assert!(*ix > 0);
+                }
+                let mut ijm1 = iy - 1;
+                let mut ijp1 = iy + 1;
+                let ij = iy * (2 + size_x);
+                ijm1 *= 2 + size_x;
+                ijp1 *= 2 + size_x;
+                // CALC WEIGHTS
+                // 2nd order
+                // The weighting scheme prtl is in middle
+                // +-----+-----+-----+
+                // | w00 | w01 | w02 |
+                // +-----+-----+-----+
+                // | w10 | w11 | w12 |
+                // +-----+-----+-----+
+                // | w20 | w21 | w22 |
+                // +-----+-----+-----+
+                let w00 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+                let w01 = 0.5 * (0.5 - dy) * (0.5 - dy) * (0.75 - dx * dx);
+                let w02 = 0.5 * (0.5 - dy) * (0.5 - dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
+                let w10 = (0.75 - dy * dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+                let w11 = (0.75 - dy * dy) * (0.75 - dx * dx);
+                let w12 = (0.75 - dy * dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
+                let w20 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 - dx) * (0.5 - dx);
+                let w21 = 0.5 * (0.5 + dy) * (0.5 + dy) * (0.75 - dx * dx);
+                let w22 = 0.5 * (0.5 + dy) * (0.5 + dy) * 0.5 * (0.5 + dx) * (0.5 + dx);
 
-            // get direct pointers to avoid unnecessary lookups
-            let e_x = &flds.e_x.spatial;
-            let e_y = &flds.e_y.spatial;
-            let e_z = &flds.e_z.spatial;
+                // INTERPOLATE ALL THE FIELDS
+                if !cfg!(feature = "unchecked") {
+                    assert!(ijp1 + ix + 1 < e_x.len());
+                }
+                // safe because of previous assertion
 
-            let b_x = &flds.b_x.spatial;
-            let b_y = &flds.b_y.spatial;
-            let b_z = &flds.b_z.spatial;
+                let mut ext: Float;
+                let mut eyt: Float;
+                let mut ezt: Float;
+                let mut bxt: Float;
+                let mut byt: Float;
+                let mut bzt: Float;
+                unsafe {
+                    ext = w00 * e_x.get_unchecked(ijm1 + ix - 1);
+                    ext += w01 * e_x.get_unchecked(ijm1 + ix);
+                    ext += w02 * e_x.get_unchecked(ijm1 + ix + 1);
+                    ext += w10 * e_x.get_unchecked(ij + ix - 1);
+                    ext += w11 * e_x.get_unchecked(ij + ix);
+                    ext += w12 * e_x.get_unchecked(ij + ix + 1);
+                    ext += w20 * e_x.get_unchecked(ijp1 + ix - 1);
+                    ext += w21 * e_x.get_unchecked(ijp1 + ix);
+                    ext += w22 * e_x.get_unchecked(ijp1 + ix + 1);
 
-            // INTERPOLATE ALL THE FIELDS
-            if !cfg!(feature = "unchecked") {
-                assert!(ijp1 + ix + 1 < e_x.len());
-            }
-            // safe because of following assertion
+                    eyt = w00 * e_y.get_unchecked(ijm1 + ix - 1);
+                    eyt += w01 * e_y.get_unchecked(ijm1 + ix);
+                    eyt += w02 * e_y.get_unchecked(ijm1 + ix + 1);
+                    eyt += w10 * e_y.get_unchecked(ij + ix - 1);
+                    eyt += w11 * e_y.get_unchecked(ij + ix);
+                    eyt += w12 * e_y.get_unchecked(ij + ix + 1);
+                    eyt += w20 * e_y.get_unchecked(ijp1 + ix - 1);
+                    eyt += w21 * e_y.get_unchecked(ijp1 + ix);
+                    eyt += w22 * e_y.get_unchecked(ijp1 + ix + 1);
 
-            unsafe {
-                ext = w00 * e_x.get_unchecked(ijm1 + ix - 1);
-                ext += w01 * e_x.get_unchecked(ijm1 + ix);
-                ext += w02 * e_x.get_unchecked(ijm1 + ix + 1);
-                ext += w10 * e_x.get_unchecked(ij + ix - 1);
-                ext += w11 * e_x.get_unchecked(ij + ix);
-                ext += w12 * e_x.get_unchecked(ij + ix + 1);
-                ext += w20 * e_x.get_unchecked(ijp1 + ix - 1);
-                ext += w21 * e_x.get_unchecked(ijp1 + ix);
-                ext += w22 * e_x.get_unchecked(ijp1 + ix + 1);
+                    ezt = w00 * e_z.get_unchecked(ijm1 + ix - 1);
+                    ezt += w01 * e_z.get_unchecked(ijm1 + ix);
+                    ezt += w02 * e_z.get_unchecked(ijm1 + ix + 1);
+                    ezt += w10 * e_z.get_unchecked(ij + ix - 1);
+                    ezt += w11 * e_z.get_unchecked(ij + ix);
+                    ezt += w12 * e_z.get_unchecked(ij + ix + 1);
+                    ezt += w20 * e_z.get_unchecked(ijp1 + ix - 1);
+                    ezt += w21 * e_z.get_unchecked(ijp1 + ix);
+                    ezt += w22 * e_z.get_unchecked(ijp1 + ix + 1);
 
-                eyt = w00 * e_y.get_unchecked(ijm1 + ix - 1);
-                eyt += w01 * e_y.get_unchecked(ijm1 + ix);
-                eyt += w02 * e_y.get_unchecked(ijm1 + ix + 1);
-                eyt += w10 * e_y.get_unchecked(ij + ix - 1);
-                eyt += w11 * e_y.get_unchecked(ij + ix);
-                eyt += w12 * e_y.get_unchecked(ij + ix + 1);
-                eyt += w20 * e_y.get_unchecked(ijp1 + ix - 1);
-                eyt += w21 * e_y.get_unchecked(ijp1 + ix);
-                eyt += w22 * e_y.get_unchecked(ijp1 + ix + 1);
+                    bxt = w00 * b_x.get_unchecked(ijm1 + ix - 1);
+                    bxt += w01 * b_x.get_unchecked(ijm1 + ix);
+                    bxt += w02 * b_x.get_unchecked(ijm1 + ix + 1);
+                    bxt += w10 * b_x.get_unchecked(ij + ix - 1);
+                    bxt += w11 * b_x.get_unchecked(ij + ix);
+                    bxt += w12 * b_x.get_unchecked(ij + ix + 1);
+                    bxt += w20 * b_x.get_unchecked(ijp1 + ix - 1);
+                    bxt += w21 * b_x.get_unchecked(ijp1 + ix);
+                    bxt += w22 * b_x.get_unchecked(ijp1 + ix + 1);
 
-                ezt = w00 * e_z.get_unchecked(ijm1 + ix - 1);
-                ezt += w01 * e_z.get_unchecked(ijm1 + ix);
-                ezt += w02 * e_z.get_unchecked(ijm1 + ix + 1);
-                ezt += w10 * e_z.get_unchecked(ij + ix - 1);
-                ezt += w11 * e_z.get_unchecked(ij + ix);
-                ezt += w12 * e_z.get_unchecked(ij + ix + 1);
-                ezt += w20 * e_z.get_unchecked(ijp1 + ix - 1);
-                ezt += w21 * e_z.get_unchecked(ijp1 + ix);
-                ezt += w22 * e_z.get_unchecked(ijp1 + ix + 1);
+                    byt = w00 * b_y.get_unchecked(ijm1 + ix - 1);
+                    byt += w01 * b_y.get_unchecked(ijm1 + ix);
+                    byt += w02 * b_y.get_unchecked(ijm1 + ix + 1);
+                    byt += w10 * b_y.get_unchecked(ij + ix - 1);
+                    byt += w11 * b_y.get_unchecked(ij + ix);
+                    byt += w12 * b_y.get_unchecked(ij + ix + 1);
+                    byt += w20 * b_y.get_unchecked(ijp1 + ix - 1);
+                    byt += w21 * b_y.get_unchecked(ijp1 + ix);
+                    byt += w22 * b_y.get_unchecked(ijp1 + ix + 1);
 
-                bxt = w00 * b_x.get_unchecked(ijm1 + ix - 1);
-                bxt += w01 * b_x.get_unchecked(ijm1 + ix);
-                bxt += w02 * b_x.get_unchecked(ijm1 + ix + 1);
-                bxt += w10 * b_x.get_unchecked(ij + ix - 1);
-                bxt += w11 * b_x.get_unchecked(ij + ix);
-                bxt += w12 * b_x.get_unchecked(ij + ix + 1);
-                bxt += w20 * b_x.get_unchecked(ijp1 + ix - 1);
-                bxt += w21 * b_x.get_unchecked(ijp1 + ix);
-                bxt += w22 * b_x.get_unchecked(ijp1 + ix + 1);
+                    bzt = w00 * b_z.get_unchecked(ijm1 + ix - 1);
+                    bzt += w01 * b_z.get_unchecked(ijm1 + ix);
+                    bzt += w02 * b_z.get_unchecked(ijm1 + ix + 1);
+                    bzt += w10 * b_z.get_unchecked(ij + ix - 1);
+                    bzt += w11 * b_z.get_unchecked(ij + ix);
+                    bzt += w12 * b_z.get_unchecked(ij + ix + 1);
+                    bzt += w20 * b_z.get_unchecked(ijp1 + ix - 1);
+                    bzt += w21 * b_z.get_unchecked(ijp1 + ix);
+                    bzt += w22 * b_z.get_unchecked(ijp1 + ix + 1);
+                }
+                ext *= beta;
+                eyt *= beta;
+                ezt *= beta;
+                bxt *= alpha;
+                byt *= alpha;
+                bzt *= alpha;
+                //  Now, the Boris push:
+                let ux = *px + ext;
+                let uy = *py + eyt;
+                let uz = *pz + ezt;
+                let gt = (1. + (ux * ux + uy * uy + uz * uz) * csqinv)
+                    .sqrt()
+                    .powi(-1);
 
-                byt = w00 * b_y.get_unchecked(ijm1 + ix - 1);
-                byt += w01 * b_y.get_unchecked(ijm1 + ix);
-                byt += w02 * b_y.get_unchecked(ijm1 + ix + 1);
-                byt += w10 * b_y.get_unchecked(ij + ix - 1);
-                byt += w11 * b_y.get_unchecked(ij + ix);
-                byt += w12 * b_y.get_unchecked(ij + ix + 1);
-                byt += w20 * b_y.get_unchecked(ijp1 + ix - 1);
-                byt += w21 * b_y.get_unchecked(ijp1 + ix);
-                byt += w22 * b_y.get_unchecked(ijp1 + ix + 1);
+                bxt *= gt;
+                byt *= gt;
+                bzt *= gt;
 
-                bzt = w00 * b_z.get_unchecked(ijm1 + ix - 1);
-                bzt += w01 * b_z.get_unchecked(ijm1 + ix);
-                bzt += w02 * b_z.get_unchecked(ijm1 + ix + 1);
-                bzt += w10 * b_z.get_unchecked(ij + ix - 1);
-                bzt += w11 * b_z.get_unchecked(ij + ix);
-                bzt += w12 * b_z.get_unchecked(ij + ix + 1);
-                bzt += w20 * b_z.get_unchecked(ijp1 + ix - 1);
-                bzt += w21 * b_z.get_unchecked(ijp1 + ix);
-                bzt += w22 * b_z.get_unchecked(ijp1 + ix + 1);
-            }
-            /* bounds checked verion. leaving for posterity
+                let boris = 2.0 * (1.0 + bxt * bxt + byt * byt + bzt * bzt).powi(-1);
 
-            } else {
-                ext = w00 * flds.e_x[ijm1 + ix - 1];
-                ext += w01 * flds.e_x[ijm1 + ix];
-                ext += w02 * flds.e_x[ijm1 + ix + 1];
-                ext += w10 * flds.e_x[ij + ix - 1];
-                ext += w11 * flds.e_x[ij + ix];
-                ext += w12 * flds.e_x[ij + ix + 1];
-                ext += w20 * flds.e_x[ijp1 + ix - 1];
-                ext += w21 * flds.e_x[ijp1 + ix];
-                ext += w22 * flds.e_x[ijp1 + ix + 1];
+                let uxt = ux + uy * bzt - uz * byt;
+                let uyt = uy + uz * bxt - ux * bzt;
+                let uzt = uz + ux * byt - uy * bxt;
 
-                eyt = w00 * flds.e_y[ijm1 + ix - 1];
-                eyt += w01 * flds.e_y[ijm1 + ix];
-                eyt += w02 * flds.e_y[ijm1 + ix + 1];
-                eyt += w10 * flds.e_y[ij + ix - 1];
-                eyt += w11 * flds.e_y[ij + ix];
-                eyt += w12 * flds.e_y[ij + ix + 1];
-                eyt += w20 * flds.e_y[ijp1 + ix - 1];
-                eyt += w21 * flds.e_y[ijp1 + ix];
-                eyt += w22 * flds.e_y[ijp1 + ix + 1];
+                *px = ux + boris * (uyt * bzt - uzt * byt) + ext;
+                *py = uy + boris * (uzt * bxt - uxt * bzt) + eyt;
+                *pz = uz + boris * (uxt * byt - uyt * bxt) + ezt;
 
-                ezt = w00 * flds.e_z[ijm1 + ix - 1];
-                ezt += w01 * flds.e_z[ijm1 + ix];
-                ezt += w02 * flds.e_z[ijm1 + ix + 1];
-                ezt += w10 * flds.e_z[ij + ix - 1];
-                ezt += w11 * flds.e_z[ij + ix];
-                ezt += w12 * flds.e_z[ij + ix + 1];
-                ezt += w20 * flds.e_z[ijp1 + ix - 1];
-                ezt += w21 * flds.e_z[ijp1 + ix];
-                ezt += w22 * flds.e_z[ijp1 + ix + 1];
-
-                bxt = w00 * flds.b_x[ijm1 + ix - 1];
-                bxt += w01 * flds.b_x[ijm1 + ix];
-                bxt += w02 * flds.b_x[ijm1 + ix + 1];
-                bxt += w10 * flds.b_x[ij + ix - 1];
-                bxt += w11 * flds.b_x[ij + ix];
-                bxt += w12 * flds.b_x[ij + ix + 1];
-                bxt += w20 * flds.b_x[ijp1 + ix - 1];
-                bxt += w21 * flds.b_x[ijp1 + ix];
-                bxt += w22 * flds.b_x[ijp1 + ix + 1];
-
-                byt = w00 * flds.b_y[ijm1 + ix - 1];
-                byt += w01 * flds.b_y[ijm1 + ix];
-                byt += w02 * flds.b_y[ijm1 + ix + 1];
-                byt += w10 * flds.b_y[ij + ix - 1];
-                byt += w11 * flds.b_y[ij + ix];
-                byt += w12 * flds.b_y[ij + ix + 1];
-                byt += w20 * flds.b_y[ijp1 + ix - 1];
-                byt += w21 * flds.b_y[ijp1 + ix];
-                byt += w22 * flds.b_y[ijp1 + ix + 1];
-
-                bzt = w00 * flds.b_z[ijm1 + ix - 1];
-                bzt += w01 * flds.b_z[ijm1 + ix];
-                bzt += w02 * flds.b_z[ijm1 + ix + 1];
-                bzt += w10 * flds.b_z[ij + ix - 1];
-                bzt += w11 * flds.b_z[ij + ix];
-                bzt += w12 * flds.b_z[ij + ix + 1];
-                bzt += w20 * flds.b_z[ijp1 + ix - 1];
-                bzt += w21 * flds.b_z[ijp1 + ix];
-                bzt += w22 * flds.b_z[ijp1 + ix + 1];
-            }
-            */
-            ext *= self.beta;
-            eyt *= self.beta;
-            ezt *= self.beta;
-            bxt *= self.alpha;
-            byt *= self.alpha;
-            bzt *= self.alpha;
-            //  Now, the Boris push:
-            ux = *px + ext;
-            uy = *py + eyt;
-            uz = *pz + ezt;
-            gt = (1. + (ux * ux + uy * uy + uz * uz) * csqinv)
-                .sqrt()
-                .powi(-1);
-
-            bxt *= gt;
-            byt *= gt;
-            bzt *= gt;
-
-            boris = 2.0 * (1.0 + bxt * bxt + byt * byt + bzt * bzt).powi(-1);
-
-            uxt = ux + uy * bzt - uz * byt;
-            uyt = uy + uz * bxt - ux * bzt;
-            uzt = uz + ux * byt - uy * bxt;
-
-            *px = ux + boris * (uyt * bzt - uzt * byt) + ext;
-            *py = uy + boris * (uzt * bxt - uxt * bzt) + eyt;
-            *pz = uz + boris * (uxt * byt - uyt * bxt) + ezt;
-
-            *psa = (1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv).sqrt()
-        }
+                *psa = (1.0 + (*px * *px + *py * *py + *pz * *pz) * csqinv).sqrt()
+            }));
     }
 }
