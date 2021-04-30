@@ -5,7 +5,8 @@ pub mod wave_num;
 use crate::flds::fft_2d::Fft2D;
 use crate::flds::field::Field;
 use crate::flds::wave_num::WaveNumbers;
-use crate::{Float, Sim};
+use crate::{Float, Sim, FLD_CHUNK_SIZE};
+use rayon::prelude::*;
 
 use itertools::izip;
 use rustfft::num_complex::Complex;
@@ -129,14 +130,19 @@ impl Flds {
             *e_x += Complex::new(0.0, cdt) * k_y * b_z - ckc * j_x;
         }
 
-        for (e_y, k_x, b_z, j_y) in izip!(
+        (
             &mut self.e_y.spectral,
             &self.k_x,
             &self.b_z.spectral,
             &self.j_y.spectral,
-        ) {
-            *e_y += Complex::new(0.0, -cdt) * k_x * b_z - ckc * j_y;
-        }
+        )
+            .into_par_iter()
+            .chunks(FLD_CHUNK_SIZE)
+            .for_each(|o| {
+                o.into_iter().for_each(|(e_y, k_x, b_z, j_y)| {
+                    *e_y += Complex::new(0.0, -cdt) * k_x * b_z - ckc * j_y
+                })
+            });
 
         for (e_z, k_x, b_y, k_y, b_x, j_z) in izip!(
             &mut self.e_z.spectral,

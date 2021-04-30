@@ -286,7 +286,7 @@ impl Prtl {
             &mut self.psa,
         )
             .into_par_iter()
-            .chunks(10000)
+            .chunks(1000)
             .for_each(|o| {
                 o.into_iter().for_each(|(ix, iy, dx, dy, px, py, pz, psa)| {
                     if !cfg!(feature = "unchecked") {

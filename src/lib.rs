@@ -18,6 +18,11 @@ pub type Float = f64;
 #[cfg(not(feature = "dprec"))]
 pub type Float = f32;
 
+// these control how many prtls you grab in the
+// rayon parallelization
+pub const PRTL_CHUNK_SIZE: usize = 1000;
+pub const FLD_CHUNK_SIZE: usize = 1000;
+
 // some helpers to make the unit tests pass in both
 // double precision and single precision modes
 #[cfg(feature = "dprec")]
