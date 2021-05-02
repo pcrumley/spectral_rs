@@ -1,4 +1,4 @@
-use crate::{Flds, Float, Sim};
+use crate::{Flds, Float, Sim, PRTL_CHUNK_SIZE};
 use itertools::izip;
 use rand::prelude::*;
 use rand_distr::Standard;
@@ -286,7 +286,7 @@ impl Prtl {
             &mut self.psa,
         )
             .into_par_iter()
-            .chunks(1000)
+            .chunks(PRTL_CHUNK_SIZE)
             .for_each(|o| {
                 o.into_iter().for_each(|(ix, iy, dx, dy, px, py, pz, psa)| {
                     if !cfg!(feature = "unchecked") {

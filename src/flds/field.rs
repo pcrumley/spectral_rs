@@ -106,16 +106,22 @@ impl Field {
     }
 
     #[inline(always)]
-    pub fn copy_to_spatial(&mut self, sim: &Sim) -> () {
+    pub fn copy_to_spatial(&mut self) -> () {
         // assert stuff about ghost zones etc.
         let spatial = &mut self.spatial;
         let spectral = &self.spectral;
         if !cfg!(feature = "unchecked") {
-            assert!(spatial.len() == (sim.size_x + 2) * (sim.size_y + 2));
-            assert!(spectral.len() == sim.size_x * sim.size_y);
+            assert_eq!(
+                spatial.len(),
+                (self.no_ghost_dim.size_x + 2) * (self.no_ghost_dim.size_y + 2)
+            );
+            assert_eq!(
+                spectral.len(),
+                (self.with_ghost_dim.size_x - 2) * (self.with_ghost_dim.size_y - 2)
+            );
         }
-        let size_x = sim.size_x;
-        let size_y = sim.size_y;
+        let size_x = self.no_ghost_dim.size_x;
+        let size_y = self.no_ghost_dim.size_y;
         for iy in 0..size_y {
             let ij = iy * (size_x);
             let ij_ghosts = (iy + 1) * (size_x + 2);
@@ -632,7 +638,7 @@ pub mod tests {
             v1.re = *v2;
         }
 
-        test_fld.copy_to_spatial(&sim);
+        test_fld.copy_to_spatial();
 
         assert_eq!(expected_output.len(), test_fld.spatial.len());
         for (v1, v2) in test_fld.spatial.iter().zip(expected_output.iter()) {
