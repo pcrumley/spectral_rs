@@ -1,4 +1,5 @@
 use crate::{Float, Sim};
+use rayon::prelude::*;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 
@@ -381,41 +382,42 @@ impl Field {
             assert!(in_vec.len() == field_buf.spatial.len());
             assert!(in_vec.len() == (size_x + 2) * (size_y + 2));
         }
-        let wrkspace = &mut field_buf.spatial;
-        for iy in 1..size_y + 1 {
-            for ix in 1..size_x + 1 {
-                let mut ijm1 = iy - 1;
-                let mut ijp1 = iy + 1;
-                let ij = iy * (2 + size_x);
-                ijm1 *= 2 + size_x;
-                ijp1 *= 2 + size_x;
-                // CALC WEIGHTS
-                // 2D binomial filter
-                // The weighting scheme prtl is in middle
-                // +-----+-----+-----+
-                // |  1  |  2  |  1  |
-                // +-----+-----+-----+
-                // |  2  |  4  |  2  |   X   1/16
-                // +-----+-----+-----+
-                // |  1  |  2  |  1  |
-                // +-----+-----+-----+
+        field_buf
+            .spatial
+            .par_iter_mut()
+            .enumerate()
+            .skip(size_x + 2)
+            .chunks(size_x + 2)
+            .for_each(|o| {
+                o.into_iter().skip(1).take(size_x).for_each(|(i, v)| {
+                    let ijm1 = i - 2 - size_x;
+                    let ijp1 = i + 2 + size_x;
+                    // CALC WEIGHTS
+                    // 2D binomial filter
+                    // The weighting scheme prtl is in middle
+                    // +-----+-----+-----+
+                    // |  1  |  2  |  1  |
+                    // +-----+-----+-----+
+                    // |  2  |  4  |  2  |   X   1/16
+                    // +-----+-----+-----+
+                    // |  1  |  2  |  1  |
+                    // +-----+-----+-----+
 
-                // safe because of assertion that vec_size is (size_x + 2)* size_y+2)
+                    // safe because of assertion that vec_size is (size_x + 2)* size_y+2)
 
-                unsafe {
-                    let mut res = 0.0625 * in_vec.get_unchecked(ijm1 + ix - 1);
-                    res += 0.125 * in_vec.get_unchecked(ijm1 + ix);
-                    res += 0.0625 * in_vec.get_unchecked(ijm1 + ix + 1);
-                    res += 0.125 * in_vec.get_unchecked(ij + ix - 1);
-                    res += 0.25 * in_vec.get_unchecked(ij + ix);
-                    res += 0.125 * in_vec.get_unchecked(ij + ix + 1);
-                    res += 0.0625 * in_vec.get_unchecked(ijp1 + ix - 1);
-                    res += 0.125 * in_vec.get_unchecked(ijp1 + ix);
-                    res += 0.0625 * in_vec.get_unchecked(ijp1 + ix + 1);
-                    *wrkspace.get_unchecked_mut(ij + ix) = res;
-                }
-            }
-        }
+                    unsafe {
+                        *v = 0.0625 * in_vec.get_unchecked(ijm1 - 1);
+                        *v += 0.125 * in_vec.get_unchecked(ijm1);
+                        *v += 0.0625 * in_vec.get_unchecked(ijm1 + 1);
+                        *v += 0.125 * in_vec.get_unchecked(i - 1);
+                        *v += 0.25 * in_vec.get_unchecked(i);
+                        *v += 0.125 * in_vec.get_unchecked(i + 1);
+                        *v += 0.0625 * in_vec.get_unchecked(ijp1 - 1);
+                        *v += 0.125 * in_vec.get_unchecked(ijp1);
+                        *v += 0.0625 * in_vec.get_unchecked(ijp1 + 1);
+                    }
+                })
+            });
 
         field_buf.update_ghosts();
         for (v1, v2) in self.spatial.iter_mut().zip(field_buf.spatial.iter()) {

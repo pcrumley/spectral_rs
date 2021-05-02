@@ -65,13 +65,17 @@ impl Flds {
     }
     fn copy_spatial_to_spectral(&mut self, sim: &Sim) {
         // copy j_x, j_y, j_z, dsty into complex vector
-        self.j_x.copy_to_spectral();
-        self.j_y.copy_to_spectral();
-        self.j_z.copy_to_spectral();
-        self.e_x.copy_to_spectral();
-        self.e_y.copy_to_spectral();
-        self.e_z.copy_to_spectral();
-        self.dsty.copy_to_spectral();
+        [
+            &mut self.j_x,
+            &mut self.j_y,
+            &mut self.j_z,
+            &mut self.e_x,
+            &mut self.e_y,
+            &mut self.e_z,
+            &mut self.dsty,
+        ]
+        .par_iter_mut()
+        .for_each(|fld| fld.copy_to_spectral());
         // need to normalize self.dsty.spectral by 1/ sim.dens;
         let norm = 1.0 / (sim.dens as Float);
         for v in self.dsty.spectral.iter_mut() {
