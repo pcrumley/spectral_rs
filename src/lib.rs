@@ -32,6 +32,12 @@ pub const E_TOL: Float = 1E-13;
 pub const E_TOL: Float = 1E-4;
 
 #[derive(Deserialize, Clone)]
+#[serde(untagged)]
+pub enum Wrkspaces {
+    MaxVal(String),
+    Val(usize),
+}
+#[derive(Deserialize, Clone)]
 pub struct Config {
     pub params: Params,
     pub setup: Setup,
@@ -41,6 +47,7 @@ pub struct Config {
 #[derive(Deserialize, Clone)]
 pub struct Setup {
     pub t_final: u32,
+    pub workspaces: Wrkspaces,
 }
 
 #[derive(Deserialize, Clone)]
@@ -68,9 +75,8 @@ pub struct Params {
 impl Config {
     pub fn new() -> Result<Config> {
         let contents =
-            fs::read_to_string("config.toml").context("Could not open the config.toml file")?;
-        let cfg: Config =
-            toml::from_str(&contents).with_context(|| "Could not parse Config file")?;
+            fs::read_to_string("config.yml").context("Could not open the config.toml file")?;
+        let cfg: Config = serde_yaml::from_str(&contents)?; //.with_context(|| "Could not parse Config file")?;
 
         // the number of cells must be even for the fft algorithm to work.
         if cfg.params.size_x % 2 != 0 || cfg.params.size_y % 2 != 0 {
@@ -120,7 +126,7 @@ impl Config {
 }
 
 pub fn run(cfg: Config) -> Result<()> {
-    let sim = Sim::new(&cfg);
+    let sim = Sim::new(&cfg)?;
     let mut prtls = Vec::<Prtl>::new();
     // Add ions to prtls list
     println!("initialzing  prtls");
@@ -212,6 +218,7 @@ pub struct Sim {
     pub delta: usize,
     pub dt: Float,
     pub c: Float,
+    pub current_workspaces: usize,
     pub dens: u32,
     pub gamma_inj: Float, // Speed of upstream flow
     pub prtl_num: usize,  // = *DENS * ( *SIZE_X - 2* *DELTA) * *SIZE_Y;
@@ -231,7 +238,10 @@ pub fn build_test_sim() -> Sim {
             stride: 4,
             istep: 1,
         },
-        setup: Setup { t_final: 1000 },
+        setup: Setup {
+            t_final: 1000,
+            workspaces: Wrkspaces::Val(1),
+        },
         params: Params {
             size_x: 24,
             size_y: 12,
@@ -243,12 +253,25 @@ pub fn build_test_sim() -> Sim {
             n_pass: 4,
         },
     };
-    Sim::new(&cfg)
+    Sim::new(&cfg).unwrap()
 }
 
 impl Sim {
-    pub fn new(cfg: &Config) -> Sim {
-        Sim {
+    pub fn new(cfg: &Config) -> Result<Sim> {
+        let mut current_workspaces = match cfg.setup.workspaces.clone() {
+            Wrkspaces::MaxVal(_) => rayon::current_num_threads(),
+            Wrkspaces::Val(i) => i,
+        };
+        if (current_workspaces < 1) || current_workspaces > rayon::current_num_threads() {
+            current_workspaces = current_workspaces.max(1).min(rayon::current_num_threads());
+            println!(
+                "warning: invalid number of workspaces to deposit current, setting to {}",
+                current_workspaces
+            );
+        } else {
+            println!("Using {} current workspaces", current_workspaces);
+        }
+        Ok(Sim {
             t: std::cell::Cell::new(0),
             t_final: cfg.setup.t_final,
             size_x: cfg.params.size_x,
@@ -256,6 +279,7 @@ impl Sim {
             delta: cfg.params.delta,
             dt: cfg.params.dt,
             c: cfg.params.c,
+            current_workspaces,
             dens: cfg.params.dens,
             gamma_inj: cfg.params.gamma_inj,
             prtl_num: cfg.params.dens as usize
@@ -263,7 +287,7 @@ impl Sim {
                 * cfg.params.size_y,
             n_pass: cfg.params.n_pass,
             config: cfg.clone(),
-        }
+        })
     }
 
     fn deposit_current(&self, prtl: &Prtl, flds: &mut Flds) {

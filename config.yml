@@ -1,0 +1,22 @@
+## A YAML that describes the simulation parmaters
+setup:
+  t_final: 500
+  workspaces: MAX # can specify number of 
+    # workspaces to which you can deposit current.
+    # MAX sets it to the number of threads
+params:
+  size_x: 2048
+  size_y: 256 
+  delta: 64
+  dt: 0.1 # In units 1/omega_pe
+  c: 3.0 # This is really c/omega_pe. Don't touch this.
+  dens: 2   # of prtls per species per cell
+  gamma_inj: 10.0 # Speed of upstream flow
+  n_pass: 4 # Number of filter passes.
+output:
+  track_prtls: false # need to think of a better way of doing this.
+  track_interval: 100 # In timesteps
+  write_output: false # save output tsteps
+  output_interval: 50 # In timesteps
+  stride: 1 # Prtl downsampling
+  istep: 1 # Flds downsampling
