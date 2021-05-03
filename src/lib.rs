@@ -18,6 +18,11 @@ pub type Float = f64;
 #[cfg(not(feature = "dprec"))]
 pub type Float = f32;
 
+// these control how many prtls you grab in the
+// rayon parallelization
+pub const PRTL_CHUNK_SIZE: usize = 1000;
+pub const FLD_CHUNK_SIZE: usize = 1000;
+
 // some helpers to make the unit tests pass in both
 // double precision and single precision modes
 #[cfg(feature = "dprec")]
@@ -374,39 +379,6 @@ impl Sim {
                 *j_z.get_unchecked_mut(ijp1 + ix) += w21 * vz;
                 *j_z.get_unchecked_mut(ijp1 + ix + 1) += w22 * vz;
             }
-            /* Bounds checked version
-             *} else {
-                j_x[ijm1 + ix - 1] += w00 * vx;
-                j_x[ijm1 + ix] += w01 * vx;
-                j_x[ijm1 + ix + 1] += w02 * vx;
-                j_x[ij + ix - 1] += w10 * vx;
-                j_x[ij + ix] += w11 * vx;
-                j_x[ij + ix + 1] += w12 * vx;
-                j_x[ijp1 + ix - 1] += w20 * vx;
-                j_x[ijp1 + ix] += w21 * vx;
-                j_x[ijp1 + ix + 1] += w22 * vx;
-
-                j_y[ijm1 + ix - 1] += w00 * vy;
-                j_y[ijm1 + ix] += w01 * vy;
-                j_y[ijm1 + ix + 1] += w02 * vy;
-                j_y[ij + ix - 1] += w10 * vy;
-                j_y[ij + ix] += w11 * vy;
-                j_y[ij + ix + 1] += w12 * vy;
-                j_y[ijp1 + ix - 1] += w20 * vy;
-                j_y[ijp1 + ix] += w21 * vy;
-                j_y[ijp1 + ix + 1] += w22 * vy;
-
-                j_z[ijm1 + ix - 1] += w00 * vz;
-                j_z[ijm1 + ix] += w01 * vz;
-                j_z[ijm1 + ix + 1] += w02 * vz;
-                j_z[ij + ix - 1] += w10 * vz;
-                j_z[ij + ix] += w11 * vz;
-                j_z[ij + ix + 1] += w12 * vz;
-                j_z[ijp1 + ix - 1] += w20 * vz;
-                j_z[ijp1 + ix] += w21 * vz;
-                j_z[ijp1 + ix + 1] += w22 * vz;
-            }
-            */
         }
     }
 
@@ -436,12 +408,6 @@ impl Sim {
             }
             ijm1 = iy - 1;
             ijp1 = iy + 1;
-            //if ix1 >= *SIZE_X {
-            //    ix1 -= *SIZE_X;
-            //    ix2 -= *SIZE_X;
-            //} else if ix2 >= *SIZE_X {
-            //    ix2 -= *SIZE_X;
-            //}
             ij = iy * (2 + self.size_x);
             ijm1 *= 2 + self.size_x;
             ijp1 *= 2 + self.size_x;
@@ -492,18 +458,6 @@ impl Sim {
                 *dens.get_unchecked_mut(ijp1 + ix) += w21;
                 *dens.get_unchecked_mut(ijp1 + ix + 1) += w22;
             }
-            /*
-             * bounds checked version. not needed because of asssert above
-                dsty[ijm1 + ix - 1] += w00 * prtl.charge;
-                dsty[ijm1 + ix] += w01 * prtl.charge;
-                dsty[ijm1 + ix + 1] += w02 * prtl.charge;
-                dsty[ij + ix - 1] += w10 * prtl.charge;
-                dsty[ij + ix] += w11 * prtl.charge;
-                dsty[ij + ix + 1] += w12 * prtl.charge;
-                dsty[ijp1 + ix - 1] += w20 * prtl.charge;
-                dsty[ijp1 + ix] += w21 * prtl.charge;
-                dsty[ijp1 + ix + 1] += w22 * prtl.charge;
-            */
         }
     }
 

@@ -5,7 +5,8 @@ pub mod wave_num;
 use crate::flds::fft_2d::Fft2D;
 use crate::flds::field::Field;
 use crate::flds::wave_num::WaveNumbers;
-use crate::{Float, Sim};
+use crate::{Float, Sim, FLD_CHUNK_SIZE};
+use rayon::prelude::*;
 
 use itertools::izip;
 use rustfft::num_complex::Complex;
@@ -64,13 +65,17 @@ impl Flds {
     }
     fn copy_spatial_to_spectral(&mut self, sim: &Sim) {
         // copy j_x, j_y, j_z, dsty into complex vector
-        self.j_x.copy_to_spectral();
-        self.j_y.copy_to_spectral();
-        self.j_z.copy_to_spectral();
-        self.e_x.copy_to_spectral();
-        self.e_y.copy_to_spectral();
-        self.e_z.copy_to_spectral();
-        self.dsty.copy_to_spectral();
+        [
+            &mut self.j_x,
+            &mut self.j_y,
+            &mut self.j_z,
+            &mut self.e_x,
+            &mut self.e_y,
+            &mut self.e_z,
+            &mut self.dsty,
+        ]
+        .par_iter_mut()
+        .for_each(|fld| fld.copy_to_spectral());
         // need to normalize self.dsty.spectral by 1/ sim.dens;
         let norm = 1.0 / (sim.dens as Float);
         for v in self.dsty.spectral.iter_mut() {
@@ -81,15 +86,18 @@ impl Flds {
 
     pub fn update(&mut self, sim: &Sim) {
         // Filter currents and density fields
+
         for _ in 0..sim.n_pass {
             for fld in &mut [&mut self.j_x, &mut self.j_y, &mut self.j_z, &mut self.dsty] {
                 fld.binomial_filter_2_d(&mut self.wrkspace);
             }
         }
+
         // copy the flds to the complex arrays to perform ffts;
         self.copy_spatial_to_spectral(sim);
 
         // Take fft of currents
+
         for current in &mut [&mut self.j_x, &mut self.j_y, &mut self.j_z, &mut self.dsty] {
             self.fft_2d.fft(current);
         }
@@ -102,15 +110,14 @@ impl Flds {
         // wrkspace contains the b field on the minus
         // half step spectral contains it as -1. We need to
         // advance spectral by 1/2 time step
-        for (b_prev, b_prev_half) in &mut [
+        [
             (&mut self.b_x.spectral, &self.b_x_wrk),
             (&mut self.b_y.spectral, &self.b_y_wrk),
             (&mut self.b_z.spectral, &self.b_z_wrk),
-        ] {
-            for (vm1, vmhalf) in b_prev.iter_mut().zip(b_prev_half.iter()) {
-                *vm1 = *vmhalf;
-            }
-        }
+        ]
+        .par_iter_mut()
+        .for_each(|(b_spect, wrk)| b_spect.copy_from_slice(wrk));
+
         // Take fft of electric fields
         for e_fld in &mut [&mut self.e_x, &mut self.e_y, &mut self.e_z] {
             self.fft_2d.fft(e_fld);
@@ -120,35 +127,50 @@ impl Flds {
         let ckc = sim.dt / sim.dens as Float;
         let cdt = sim.dt * sim.c as Float;
 
-        for (e_x, k_y, b_z, j_x) in izip!(
+        (
             &mut self.e_x.spectral,
             &self.k_y,
             &self.b_z.spectral,
             &self.j_x.spectral,
-        ) {
-            *e_x += Complex::new(0.0, cdt) * k_y * b_z - ckc * j_x;
-        }
+        )
+            .into_par_iter()
+            .chunks(FLD_CHUNK_SIZE)
+            .for_each(|o| {
+                o.into_iter().for_each(|(e_x, k_y, b_z, j_x)| {
+                    *e_x += Complex::new(0.0, cdt) * k_y * b_z - ckc * j_x
+                })
+            });
 
-        for (e_y, k_x, b_z, j_y) in izip!(
+        (
             &mut self.e_y.spectral,
             &self.k_x,
             &self.b_z.spectral,
             &self.j_y.spectral,
-        ) {
-            *e_y += Complex::new(0.0, -cdt) * k_x * b_z - ckc * j_y;
-        }
+        )
+            .into_par_iter()
+            .chunks(FLD_CHUNK_SIZE)
+            .for_each(|o| {
+                o.into_iter().for_each(|(e_y, k_x, b_z, j_y)| {
+                    *e_y += Complex::new(0.0, -cdt) * k_x * b_z - ckc * j_y
+                })
+            });
 
-        for (e_z, k_x, b_y, k_y, b_x, j_z) in izip!(
+        (
             &mut self.e_z.spectral,
             &self.k_x,
             &self.b_y.spectral,
             &self.k_y,
             &self.b_x.spectral,
-            &self.j_z.spectral
-        ) {
-            *e_z += Complex::new(0.0, cdt) * (k_x * b_y - k_y * b_x);
-            *e_z -= ckc * j_z;
-        }
+            &self.j_z.spectral,
+        )
+            .into_par_iter()
+            .chunks(FLD_CHUNK_SIZE)
+            .for_each(|o| {
+                o.into_iter().for_each(|(e_z, k_x, b_y, k_y, b_x, j_z)| {
+                    *e_z += Complex::new(0.0, cdt) * (k_x * b_y - k_y * b_x);
+                    *e_z -= ckc * j_z;
+                })
+            });
 
         // save k=0 components because impossible to apply correction
         // (division by 0)
@@ -159,20 +181,24 @@ impl Flds {
         // some helper vars we initialize. I don't know if it helps to do
         // this outside of the loop in rust or not.
 
-        let mut tmp: Complex<Float>;
-
-        for (e_x, e_y, k_x, k_y, dsty, norm) in izip!(
+        // for (e_x, e_y, k_x, k_y, dsty, norm) in izip!(
+        (
             &mut self.e_x.spectral,
             &mut self.e_y.spectral,
             &self.k_x,
             &self.k_y,
             &self.dsty.spectral,
-            &self.k_norm
-        ) {
-            tmp = (k_x * *e_x + k_y * *e_y + Complex::new(0., 1.) * dsty) * norm;
-            *e_x -= tmp * k_x;
-            *e_y -= tmp * k_y;
-        }
+            &self.k_norm,
+        )
+            .into_par_iter()
+            .chunks(FLD_CHUNK_SIZE)
+            .for_each(|o| {
+                o.into_iter().for_each(|(e_x, e_y, k_x, k_y, dsty, norm)| {
+                    let tmp = (k_x * *e_x + k_y * *e_y + Complex::new(0., 1.) * dsty) * norm;
+                    *e_x -= tmp * k_x;
+                    *e_y -= tmp * k_y;
+                })
+            });
 
         // restablish uncorrected longitudinal electric field...
         // needed to conserve the contribution from motional electric field
@@ -264,19 +290,21 @@ impl Flds {
         }
         // copy that fft to real array
         // let mut im_sum = 0.0;
-        for fld in &mut [
+        [
             &mut self.b_x,
             &mut self.b_y,
             &mut self.b_z,
             &mut self.e_x,
             &mut self.e_y,
             &mut self.e_z,
-        ] {
+        ]
+        .par_iter_mut()
+        .for_each(|fld| {
             /* im_sum += fld.spectral.iter().map(|o| o.im.abs()).sum::<Float>()
             / (fld.spectral.len() as Float);
             */
-            fld.copy_to_spatial(&sim);
-        }
+            fld.copy_to_spatial();
+        });
         // println!("{}", im_sum);
     }
 }
