@@ -6,6 +6,7 @@ use crate::flds::fft_2d::Fft2D;
 use crate::flds::field::Field;
 use crate::flds::wave_num::WaveNumbers;
 use crate::{Float, Sim, FLD_CHUNK_SIZE};
+use anyhow::{anyhow, Result};
 use rayon::prelude::*;
 
 use itertools::izip;
@@ -31,36 +32,44 @@ pub struct Flds {
     b_x_wrk: Vec<Complex<Float>>,
     b_y_wrk: Vec<Complex<Float>>,
     b_z_wrk: Vec<Complex<Float>>,
-    wrkspace: Field,
+    wrkspaces: Vec<Field>,
     pub dsty: Field,
     pub fft_2d: Fft2D,
 }
 
 impl Flds {
-    pub fn new(sim: &Sim) -> Flds {
+    pub fn new(sim: &Sim) -> Result<Flds> {
         // let Bnorm = 0Float;
         let wave_nums = WaveNumbers::new(sim);
-
-        Flds {
-            e_x: Field::new(sim, "Ex".into()),
-            e_y: Field::new(sim, "Ey".into()),
-            e_z: Field::new(sim, "Ez".into()),
-            b_x: Field::new(sim, "Bx".into()),
-            b_y: Field::new(sim, "By".into()),
-            b_z: Field::new(sim, "Bz".into()),
-            j_x: Field::new(sim, "Jx".into()),
-            j_y: Field::new(sim, "Jy".into()),
-            j_z: Field::new(sim, "Jz".into()),
-            dsty: Field::new(sim, "Rho".into()),
-            dens: Field::new(sim, "Dens".into()),
-            k_x: wave_nums.k_x,
-            k_y: wave_nums.k_y,
-            k_norm: wave_nums.k_norm,
-            b_x_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            b_z_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
-            fft_2d: Fft2D::new(sim),
-            wrkspace: Field::default(sim),
+        let wrkspaces: Vec<Field> = (0..sim.current_workspaces)
+            .map(|_| Field::default(sim))
+            .collect();
+        if wrkspaces.len() < 1 {
+            Err(anyhow!(
+                "The number workspaces in the config file must be at least 1"
+            ))
+        } else {
+            Ok(Flds {
+                e_x: Field::new(sim, "Ex".into()),
+                e_y: Field::new(sim, "Ey".into()),
+                e_z: Field::new(sim, "Ez".into()),
+                b_x: Field::new(sim, "Bx".into()),
+                b_y: Field::new(sim, "By".into()),
+                b_z: Field::new(sim, "Bz".into()),
+                j_x: Field::new(sim, "Jx".into()),
+                j_y: Field::new(sim, "Jy".into()),
+                j_z: Field::new(sim, "Jz".into()),
+                dsty: Field::new(sim, "Rho".into()),
+                dens: Field::new(sim, "Dens".into()),
+                k_x: wave_nums.k_x,
+                k_y: wave_nums.k_y,
+                k_norm: wave_nums.k_norm,
+                b_x_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+                b_y_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+                b_z_wrk: vec![Complex::zero(); (sim.size_y) * (sim.size_x)],
+                fft_2d: Fft2D::new(sim),
+                wrkspaces,
+            })
         }
     }
     fn copy_spatial_to_spectral(&mut self, sim: &Sim) {
@@ -89,7 +98,7 @@ impl Flds {
 
         for _ in 0..sim.n_pass {
             for fld in &mut [&mut self.j_x, &mut self.j_y, &mut self.j_z, &mut self.dsty] {
-                fld.binomial_filter_2_d(&mut self.wrkspace);
+                fld.binomial_filter_2_d(&mut self.wrkspaces[0]);
             }
         }
 
@@ -321,7 +330,7 @@ pub mod tests {
         let expected_complex_val: Vec<Complex<Float>> = vec![Complex::zero(); 24 * 12];
 
         let sim = build_test_sim();
-        let flds = Flds::new(&sim);
+        let flds = Flds::new(&sim).unwrap();
         for fld in &[
             flds.j_x, flds.j_y, flds.j_z, flds.dsty, flds.b_x, flds.b_y, flds.b_z, flds.e_x,
             flds.e_y, flds.e_z,

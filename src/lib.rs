@@ -134,7 +134,7 @@ pub fn run(cfg: Config) -> Result<()> {
     // Add lecs to prtls list
     prtls.push(Prtl::new(&sim, -1.0, 1.0, 1E-3));
 
-    let mut flds = Flds::new(&sim);
+    let mut flds = Flds::new(&sim)?;
 
     for prtl in prtls.iter_mut() {
         sim.move_and_deposit(prtl, &mut flds);
@@ -157,7 +157,7 @@ pub fn run(cfg: Config) -> Result<()> {
     let mut gam_track =
         Vec::<Float>::with_capacity((sim.t_final / cfg.output.output_interval) as usize);
     */
-    for t in 0..=sim.t_final {
+    for t in 0..sim.t_final + 1 {
         if cfg.output.write_output {
             save_output(t, &sim, &flds, &prtls)?;
         }
@@ -205,13 +205,14 @@ pub fn run(cfg: Config) -> Result<()> {
         }
         println!("{:?}", push_time.elapsed().unwrap());
 
-        sim.t.set(t);
+        let mut t = sim.t.lock().unwrap();
+        *t += 1;
     }
     Ok(())
 }
 
 pub struct Sim {
-    pub t: std::cell::Cell<u32>,
+    pub t: std::sync::Arc<std::sync::Mutex<u32>>,
     pub t_final: u32,
     pub size_x: usize,
     pub size_y: usize,
@@ -272,7 +273,7 @@ impl Sim {
             println!("Using {} current workspaces", current_workspaces);
         }
         Ok(Sim {
-            t: std::cell::Cell::new(0),
+            t: std::sync::Arc::new(std::sync::Mutex::new(0)),
             t_final: cfg.setup.t_final,
             size_x: cfg.params.size_x,
             size_y: cfg.params.size_y,
