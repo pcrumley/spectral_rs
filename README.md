@@ -1,4 +1,4 @@
-# spectral_rs [![Build Status](https://travis-ci.com/pcrumley/spectral_rs.svg?branch=master)](https://travis-ci.com/pcrumley/spectral_rs)
+# spectral_rs [![Build Status](https://api.travis-ci.com/pcrumley/spectral_rs.svg?branch=master)](https://app.travis-ci.com/github/pcrumley/spectral_rs)
 A rust based relativistic pseudo-spectral PIC method
 
 ![Unmagnetized shock](https://user-images.githubusercontent.com/15001732/115772199-d46b3500-a37c-11eb-825d-96ab24d58760.png)
