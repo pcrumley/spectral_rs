@@ -13,4 +13,8 @@ clone this repo. cd to the main directory (one with `config.toml`). Edit `config
 
 By default the code is in single precision, but if you want it to run in double precision
 
-`cargo run --release --features=dprec`
+`cargo run --release --features dprec`
+
+I also memory "unsafe" code but provide runtime assertions that prove memory safety is not violated. If you don't want
+have that very small runtime overhead you can run it as
+`cargo run --release --features "dprec unchecked"`
