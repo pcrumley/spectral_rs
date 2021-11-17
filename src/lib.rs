@@ -85,11 +85,6 @@ impl Config {
                 msg
             )));
         }
-        if cfg.params.size_y % 2 != 0 {
-            return Err(anyhow::Error::msg(
-                "Number of cells in y direction must be even",
-            ));
-        }
         if cfg.params.delta * 2 >= cfg.params.size_x {
             return Err(anyhow::Error::msg(
                 "Delta must be less than 1/2 the size of size_x",
@@ -99,6 +94,8 @@ impl Config {
             return Err(anyhow::Error::msg("Lorentz factor must be greater than 1"));
         }
 
+        // Number of cells in each direction must be divisible by the downsampling
+        // for saving outputs to make the downsampling algorithm a simple skip.
         if cfg.params.size_x % cfg.output.istep != 0 || cfg.params.size_y % cfg.output.istep != 0 {
             let msg = match (
                 cfg.params.size_x % cfg.output.istep == 0,
@@ -312,6 +309,13 @@ impl Sim {
         let j_y = &mut flds.j_y.spatial;
         let j_z = &mut flds.j_z.spatial;
 
+        // Assert that all fields have the same length. Should be guaranteed
+        // by their construction but not a bad idea to do it anyway.
+        if !cfg!(feature = "uchecked") {
+            assert_eq!(j_x.len(), j_y.len());
+            assert_eq!(j_x.len(), j_z.len());
+        }
+
         for (ix, iy, dx, dy, px, py, pz, psa) in
             izip!(&prtl.ix, &prtl.iy, &prtl.dx, &prtl.dy, &prtl.px, &prtl.py, &prtl.pz, &prtl.psa)
         {
@@ -344,10 +348,16 @@ impl Sim {
 
             // Deposit the CURRENT
             if !cfg!(feature = "unchecked") {
-                // Safe because we will assert that ijp1 + ix + 1 < len(flds.j_x)
-
+                // this assertion guarantees we do not try to grab a value
+                // that is larger than array length.
                 assert!(ijp1 + ix + 1 < j_x.len());
+                // We do not need to do assert ijm1 + ix - 1 >= 0 because
+                // we asserted ix > 0 and ijm1 >=0
+
+                // We also previously asserted that all current arrays have
+                // the same length.
             }
+            // safe due to previous assertions in the code
             unsafe {
                 *j_x.get_unchecked_mut(ijm1 + ix - 1) += w00 * vx;
                 *j_x.get_unchecked_mut(ijm1 + ix) += w01 * vx;
@@ -434,9 +444,13 @@ impl Sim {
 
             // Deposit the density
             if !cfg!(feature = "unchecked") {
-                // safe because following assertion
+                // this assertion guarantees we do not try to grab a value
+                // that is larger than array length.
                 assert!(ijp1 + ix + 1 < dsty.len());
+                // We do not need to do assert ijm1 + ix - 1 >= 0 because
+                // we asserted ix > 0 and ijm1 >=0
             }
+            // safe because of previous assertions
             unsafe {
                 *dsty.get_unchecked_mut(ijm1 + ix - 1) += w00 * prtl.charge;
                 *dsty.get_unchecked_mut(ijm1 + ix) += w01 * prtl.charge;

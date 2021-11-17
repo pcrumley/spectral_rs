@@ -274,6 +274,16 @@ impl Prtl {
         let b_y = &flds.b_y.spatial;
         let b_z = &flds.b_z.spatial;
 
+        // Assert that all fields have the same length. Should be guaranteed
+        // by their construction but not a bad idea to do it anyway.
+        if !cfg!(feature = "uchecked") {
+            assert_eq!(b_x.len(), b_y.len());
+            assert_eq!(b_x.len(), b_z.len());
+            assert_eq!(b_x.len(), e_x.len());
+            assert_eq!(b_x.len(), e_y.len());
+            assert_eq!(b_x.len(), e_z.len());
+        }
+
         let size_x = sim.size_x;
         (
             &self.ix,
@@ -320,9 +330,17 @@ impl Prtl {
 
                     // INTERPOLATE ALL THE FIELDS
                     if !cfg!(feature = "unchecked") {
+                        // this assertion guarantees we do not try to grab a value
+                        // that is larger than array length.
                         assert!(ijp1 + ix + 1 < e_x.len());
+                        // We do not need to do assert ijm1 + ix - 1 >= 0 because
+                        // we asserted ix > 0 and ijm1 >=0
+
+                        // We also previously asserted that all E and B arrays have
+                        // the same length.
                     }
-                    // safe because of previous assertion
+
+                    // safe because of previous assertions
 
                     let mut ext: Float;
                     let mut eyt: Float;
