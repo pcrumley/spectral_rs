@@ -3,7 +3,7 @@ A rust based relativistic pseudo-spectral PIC method
 
 ![Unmagnetized shock](https://user-images.githubusercontent.com/15001732/115772199-d46b3500-a37c-11eb-825d-96ab24d58760.png)
 
-This is still very much a work in progress but I believe all the physics is correct.
+This is still very much a work in progress but can correctly model unmagnetized shocks
 
 To run install rust https://www.rust-lang.org/tools/install
 
